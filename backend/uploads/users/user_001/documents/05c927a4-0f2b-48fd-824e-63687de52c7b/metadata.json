@@ -1,0 +1,13 @@
+{
+    "document_id": "05c927a4-0f2b-48fd-824e-63687de52c7b",
+    "original_name": "Phase 2 \u2014 Build Core Learning Modules.pdf",
+    "stored_name": "original.pdf",
+    "user_id": "user_001",
+    "uploaded_at": "2026-07-11T08:41:20.555779",
+    "pages": 2,
+    "word_count": 200,
+    "chunks": 1,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "vectorized": true,
+    "status": "embedded"
+}

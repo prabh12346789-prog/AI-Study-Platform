@@ -1,0 +1,13 @@
+{
+    "document_id": "48972e56-e6b7-4831-b62c-f7cf61318390",
+    "original_name": "Frontend Foundation.pdf",
+    "stored_name": "original.pdf",
+    "user_id": "user_001",
+    "uploaded_at": "2026-07-11T08:41:37.649911",
+    "pages": 3,
+    "word_count": 287,
+    "chunks": 1,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "vectorized": true,
+    "status": "embedded"
+}

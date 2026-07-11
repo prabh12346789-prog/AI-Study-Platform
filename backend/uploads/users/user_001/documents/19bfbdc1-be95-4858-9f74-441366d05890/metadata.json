@@ -1,0 +1,13 @@
+{
+    "document_id": "19bfbdc1-be95-4858-9f74-441366d05890",
+    "original_name": "Phase 3 - Complete the Frontend.pdf",
+    "stored_name": "original.pdf",
+    "user_id": "user_001",
+    "uploaded_at": "2026-07-11T08:40:54.654460",
+    "pages": 3,
+    "word_count": 195,
+    "chunks": 1,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "vectorized": true,
+    "status": "embedded"
+}

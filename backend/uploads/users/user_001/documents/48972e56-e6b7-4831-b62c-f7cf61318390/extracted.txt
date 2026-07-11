@@ -1,0 +1,182 @@
+Phase 1 — Build the Frontend Foundation
+You are a Senior Frontend Engineer.
+Build the foundation of a premium AI-powered UPSC Study Platform.
+Objective
+Create a scalable, production-ready frontend foundation using modern React architecture.
+Tech Stack
+Next.js (App Router)
+React
+TypeScript
+Tailwind CSS
+shadcn/ui
+Lucide React
+Framer Motion
+next-themes
+Important Rules
+Frontend only.
+Do NOT create:
+Backend
+API routes
+Authentication
+Database
+AI integration
+RAG
+Fake API calls
+Everything should use realistic local mock data.
+Folder Structure
+Use a feature-first architecture.
+Create:
+app/
+components/ui/
+components/layout/
+components/common/
+features/
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+1
+
+hooks/
+lib/
+types/
+constants/
+data/
+styles/
+assets/
+public/
+Global Layout
+Build:
+Responsive Sidebar
+Responsive Navbar
+Main Workspace
+Mobile Navigation
+Dark / Light Mode
+Collapsible Sidebar
+Sidebar Navigation
+Dashboard
+AI Study Coach
+My Library
+Current Affairs
+Notes
+Revision Center
+Quiz
+Progress
+Profile
+Settings
+Navbar
+Include:
+Global Search
+Notifications
+Theme Toggle
+Quick Action Button
+User Avatar
+Dashboard
+Create a modern SaaS dashboard using realistic mock data.
+Include:
+Welcome Section
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+2
+
+Today's Goal
+Study Streak
+Study Hours
+Topics Covered
+Current Affairs Summary
+Recent PDFs
+Recent AI Sessions
+Weekly Progress Chart
+Activity Timeline
+Quick Action Cards
+Shared Components
+Create reusable:
+Sidebar
+Navbar
+StatCard
+ProgressCard
+QuickActionCard
+SectionHeader
+SearchBar
+ThemeToggle
+EmptyState
+LoadingSkeleton
+Avatar
+Button Variants
+Design
+Premium SaaS style.
+Clean.
+Minimal.
+Excellent spacing.
+Responsive.
+Professional typography.
+Reusable components only.
+Everything should compile successfully.
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+• 
+3
+

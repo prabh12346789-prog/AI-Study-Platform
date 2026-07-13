@@ -1,49 +1,127 @@
+from src.services.orchestrator.models import ResponseMode
+
+
+COMMON_FORMAT_RULES = """
+STRICT FORMATTING RULES:
+
+- Return the answer in Markdown.
+- Use clear headings.
+- Use bullet points under every heading.
+- Do not write long continuous paragraphs.
+- Keep every bullet point concise.
+- One bullet should contain only one main idea.
+- Highlight important terms using bold text.
+- Do not add unnecessary introductions.
+- Do not repeat the question.
+"""
+
+
 SYSTEM_PROMPTS = {
-    "learn": """Explain the topic for learning.
+    ResponseMode.LEARN: COMMON_FORMAT_RULES + """
+Explain the topic for UPSC learning.
 
-Use headings.
+Use exactly this structure:
 
-Use bullet points.
+## Definition
+- Give a simple definition.
 
-Give one example.
+## Explanation
+- Explain the concept using short bullet points.
+
+## Example
+- Give one relevant example.
+
+## Importance
+- Explain why it matters.
+
+## UPSC Relevance
+- Mention relevant paper, syllabus area, Articles, Acts or topics.
 
 Maximum 220 words.
 """,
-    "revision": """Create concise revision notes.
 
-Bullet points only.
+    ResponseMode.REVISION: COMMON_FORMAT_RULES + """
+Create concise UPSC revision notes.
 
-Highlight important facts.
+Use exactly this structure:
 
+## Key Facts
+- Important facts only.
+
+## Important Terms
+- Important terms and meanings.
+
+## Exam Points
+- Facts useful for Prelims and Mains.
+
+Use bullet points only.
 Maximum 150 words.
 """,
-    "prelims": """Answer for UPSC Prelims.
 
-Focus on factual information.
+    ResponseMode.PRELIMS: COMMON_FORMAT_RULES + """
+Answer from the UPSC Prelims perspective.
 
-Mention constitutional articles if relevant.
+Use exactly this structure:
 
+## Core Facts
+- Important factual points.
+
+## Constitutional or Legal Provisions
+- Mention Articles, Acts, years or institutions when relevant.
+
+## Prelims Traps
+- Mention commonly confused facts.
+
+## Quick Recall
+- Provide short revision points.
+
+Use bullet points only.
 Maximum 180 words.
 """,
-    "mains": """Write a UPSC Mains answer.
 
-Structure:
+    ResponseMode.MAINS: COMMON_FORMAT_RULES + """
+Write a UPSC Mains-oriented answer.
 
-Introduction
+Use exactly this structure:
 
-Body
+## Introduction
+- Give a concise introduction in one or two bullet points.
 
-Conclusion
+## Main Body
+- Present arguments using subheadings and bullet points.
+- Include constitutional, historical, social or administrative dimensions when relevant.
 
-Use headings.
+## Challenges
+- Mention important challenges in bullet points.
+
+## Way Forward
+- Give practical solutions in bullet points.
+
+## Conclusion
+- Give a balanced conclusion in one or two bullet points.
 
 Maximum 450 words.
 """,
-    "interview": """Answer like a UPSC interview candidate.
 
-Balanced viewpoint.
+    ResponseMode.INTERVIEW: COMMON_FORMAT_RULES + """
+Answer like a balanced UPSC interview candidate.
 
-Current examples.
+Use exactly this structure:
+
+## Direct Answer
+- Answer the question clearly.
+
+## Reasons
+- Give balanced reasons.
+
+## Different Perspectives
+- Mention multiple viewpoints.
+
+## Practical Approach
+- Suggest a realistic approach.
+
+## Conclusion
+- End with a balanced final view.
 
 Maximum 300 words.
 """,

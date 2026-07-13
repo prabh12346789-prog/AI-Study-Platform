@@ -5,19 +5,19 @@ COMMON_FORMAT_RULES = """
 STRICT FORMATTING RULES:
 
 - Return the answer in Markdown.
-- Use clear headings.
-- Use bullet points under every heading.
+- Use the exact headings required by the selected mode.
+- Use bullet points under every heading; every bullet must begin with "- ".
 - Do not write long continuous paragraphs.
-- Keep every bullet point concise.
-- One bullet should contain only one main idea.
-- Highlight important terms using bold text.
+- Keep every bullet concise and focused on one main fact.
+- Use bold text for Articles, Acts, years, institutions, and key terms.
 - Do not add unnecessary introductions.
 - Do not repeat the question.
+- Do not invent constitutional provisions or factual details.
 """
 
 
 SYSTEM_PROMPTS = {
-    ResponseMode.LEARN: COMMON_FORMAT_RULES + """
+    ResponseMode.LEARN: """
 Explain the topic for UPSC learning.
 
 Use exactly this structure:
@@ -40,7 +40,7 @@ Use exactly this structure:
 Maximum 220 words.
 """,
 
-    ResponseMode.REVISION: COMMON_FORMAT_RULES + """
+    ResponseMode.REVISION: """
 Create concise UPSC revision notes.
 
 Use exactly this structure:
@@ -58,7 +58,7 @@ Use bullet points only.
 Maximum 150 words.
 """,
 
-    ResponseMode.PRELIMS: COMMON_FORMAT_RULES + """
+    ResponseMode.PRELIMS: """
 Answer from the UPSC Prelims perspective.
 
 Use exactly this structure:
@@ -69,17 +69,18 @@ Use exactly this structure:
 ## Constitutional or Legal Provisions
 - Mention Articles, Acts, years or institutions when relevant.
 
-## Prelims Traps
+## Important Prelims Facts
+- State frequently tested factual distinctions.
+
+## Prelims Trap
 - Mention commonly confused facts.
 
-## Quick Recall
-- Provide short revision points.
-
 Use bullet points only.
+Do not add an introduction or conclusion.
 Maximum 180 words.
 """,
 
-    ResponseMode.MAINS: COMMON_FORMAT_RULES + """
+    ResponseMode.MAINS: """
 Write a UPSC Mains-oriented answer.
 
 Use exactly this structure:
@@ -88,8 +89,11 @@ Use exactly this structure:
 - Give a concise introduction in one or two bullet points.
 
 ## Main Body
-- Present arguments using subheadings and bullet points.
-- Include constitutional, historical, social or administrative dimensions when relevant.
+### Dimension 1
+- Present relevant arguments using concise bullet points.
+
+### Dimension 2
+- Present additional relevant arguments using concise bullet points.
 
 ## Challenges
 - Mention important challenges in bullet points.
@@ -103,7 +107,7 @@ Use exactly this structure:
 Maximum 450 words.
 """,
 
-    ResponseMode.INTERVIEW: COMMON_FORMAT_RULES + """
+    ResponseMode.INTERVIEW: """
 Answer like a balanced UPSC interview candidate.
 
 Use exactly this structure:

@@ -7,7 +7,7 @@ from src.core.config import settings
 from src.memory.manager import MemoryManager
 from src.rag.prompt_builder import PromptBuilder
 from src.search.provider import SearchProvider
-from src.services.orchestrator.prompts import SYSTEM_PROMPTS
+from src.services.orchestrator.prompts import COMMON_FORMAT_RULES, SYSTEM_PROMPTS
 from src.services.orchestrator.formatter import format_response
 
 
@@ -61,25 +61,28 @@ class AIOrchestrator:
 
         sources = search_result.get("sources", [])
 
-        history_block = f"\n\nConversation History\n\n{history_text}" if history_text else ""
+        prompt_sections = [
+            "System Instructions:\n" + COMMON_FORMAT_RULES.strip(),
+            "Mode-specific Formatting Instructions:\n" + SYSTEM_PROMPTS[mode].strip(),
+        ]
 
-        if search_result.get("context"):
-            prompt = f"""
-System:
-{SYSTEM_PROMPTS[mode]}
+        if history_text:
+            prompt_sections.append("Conversation History:\n" + history_text)
 
-{history_block}
-{prompt_body}
-"""
-        else:
-            prompt = f"""
-System:
-{SYSTEM_PROMPTS[mode]}
+        if prompt_body:
+            prompt_sections.append(
+                "Retrieved PDF or Web Context:\n"
+                "Use this context whenever possible; do not invent facts beyond it.\n"
+                + prompt_body
+            )
 
-Question:
-{question}
-{history_block}
-"""
+        prompt_sections.extend(
+            [
+                "Current User Question:\n" + question,
+                "Final Reminder:\nFollow the requested Markdown structure exactly.",
+            ]
+        )
+        prompt = "\n\n".join(prompt_sections)
 
         print("=" * 80)
         print("PROMPT LENGTH:", len(prompt))

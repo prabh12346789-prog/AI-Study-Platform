@@ -2,23 +2,18 @@ class PromptBuilder:
 
     @staticmethod
     def build_prompt(question: str, search_result: dict):
-
         provider = search_result.get("provider", "local")
         context_text = search_result.get("context", "")
 
         if context_text:
             source_label = "Uploaded Documents" if provider == "local" else "Trusted Web Sources"
             return (
-                "You are an AI Study Assistant.\n\n"
-                "Answer ONLY using the provided context whenever possible.\n\n"
                 f"Source: {source_label}\n\n"
-                "Context\n\n"
-                f"{context_text}\n\n"
-                "Question\n\n"
-                f"{question}"
+                "Retrieved Context\n\n"
+                f"{context_text}"
             )
 
-        return question
+        return ""
 
     @staticmethod
     def build_context(chunks: list[dict]):

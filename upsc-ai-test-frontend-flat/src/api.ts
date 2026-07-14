@@ -76,12 +76,24 @@ export interface MentorDashboardData {
   mentor_brief: { summary: string; strengths: TopicMastery[]; weaknesses: TopicMastery[]; likely_to_forget: TopicMastery[]; next_best_action: MentorAction | null }
   mastery: { average_mastery: number; strong_topics: TopicMastery[]; weak_topics: TopicMastery[]; high_risk_topics: TopicMastery[]; subject_breakdown: Array<{ subject: string; mastery_score: number }> }
   recommendations: { primary: MentorAction | null; alternatives: MentorAction[] }
+  recommended_videos: VideoRecommendation[]
   profile: { preferred_language: string; preferred_depth: string; preferred_format: string; daily_target_minutes: number }
   recent_activity: ActivityEvent[]
 }
 
+export interface VideoResource {
+  id: string; title: string; description: string; subject: string; topic: string
+  language: 'english' | 'hindi' | 'punjabi'; source_name: string; source_url: string
+  thumbnail_url: string; duration_seconds: number; difficulty: 'beginner' | 'standard' | 'advanced'
+  verified: boolean; active: boolean
+}
+export interface VideoRecommendation { video: VideoResource; reasons: string[] }
+
 export interface Conversation { id: string; title: string; created_at: string; updated_at: string }
 export interface ConversationMessage { id: number; conversation_id: string; role: 'user' | 'assistant'; content: string; timestamp: string }
+export interface CommunityGroup { id: string; name: string; slug: string; description: string; subject: string }
+export interface CommunityPost { id: string; user_id: string; group_id: string; group_name: string; subject: string; title: string; content: string; language: string; source_url: string | null; display_name: string; comment_count: number; saved: boolean; created_at: string }
+export interface CommunityComment { id: string; user_id: string; post_id: string; content: string; created_at: string }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -279,6 +291,27 @@ export async function getMentorDashboard(): Promise<MentorDashboardData> {
   return response.json()
 }
 
+export async function getVideoRecommendations(filters: { subject?: string | null; topic?: string | null; language?: string; maxDurationSeconds?: number; explicitRequest?: boolean } = {}): Promise<VideoRecommendation[]> {
+  const params = new URLSearchParams()
+  if (filters.subject) params.set('subject', filters.subject)
+  if (filters.topic) params.set('topic', filters.topic)
+  if (filters.language) params.set('language', filters.language)
+  if (filters.maxDurationSeconds) params.set('max_duration_seconds', String(filters.maxDurationSeconds))
+  if (filters.explicitRequest) params.set('explicit_request', 'true')
+  const response = await fetch(`${API_BASE_URL}/videos/recommendations?${params}`)
+  if (!response.ok) throw new Error(`Video recommendations failed (${response.status}): ${await response.text()}`)
+  return response.json()
+}
+export async function openVideo(id: string): Promise<VideoResource> {
+  const response = await fetch(`${API_BASE_URL}/videos/${id}/open`, { method: 'POST' })
+  if (!response.ok) throw new Error(`Video link unavailable (${response.status})`)
+  return response.json()
+}
+export async function dismissVideo(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/videos/${id}/dismiss`, { method: 'POST' })
+  if (!response.ok) throw new Error(`Unable to dismiss video (${response.status})`)
+}
+
 export async function uploadPdf(file: File, signal?: AbortSignal): Promise<unknown> {
   const formData = new FormData()
   formData.append('file', file)
@@ -297,5 +330,22 @@ export async function uploadPdf(file: File, signal?: AbortSignal): Promise<unkno
   const contentType = response.headers.get('content-type') ?? ''
   return contentType.includes('application/json') ? response.json() : response.text()
 }
+
+async function communityRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/community${path}`, init)
+  if (!response.ok) throw new Error(`Community request failed (${response.status}): ${await response.text()}`)
+  return response.status === 204 ? undefined as T : response.json()
+}
+export const getCommunityGroups = () => communityRequest<CommunityGroup[]>('/groups')
+export const getCommunityPosts = (params = '') => communityRequest<CommunityPost[]>(`/posts${params ? `?${params}` : ''}`)
+export const getCommunityPost = (id: string) => communityRequest<CommunityPost>(`/posts/${id}`)
+export const createCommunityPost = (data: { group_id: string; title: string; content: string; language: string; source_url?: string }) => communityRequest<CommunityPost>('/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+export const updateCommunityPost = (id: string, data: Partial<{ title: string; content: string; language: string; source_url: string | null }>) => communityRequest<CommunityPost>(`/posts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+export const deleteCommunityPost = (id: string) => communityRequest<void>(`/posts/${id}`, { method: 'DELETE' })
+export const getCommunityComments = (id: string) => communityRequest<CommunityComment[]>(`/posts/${id}/comments`)
+export const createCommunityComment = (id: string, content: string) => communityRequest<CommunityComment>(`/posts/${id}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) })
+export const deleteCommunityComment = (id: string) => communityRequest<void>(`/comments/${id}`, { method: 'DELETE' })
+export const saveCommunityPost = (id: string, saved: boolean) => communityRequest<void>(`/posts/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
+export const reportCommunityPost = (id: string, reason: string, details?: string) => communityRequest<void>('/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_type: 'post', target_id: id, reason, details }) })
 
 export { API_BASE_URL }

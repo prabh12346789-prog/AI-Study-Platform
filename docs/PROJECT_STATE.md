@@ -64,6 +64,15 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 - Normal responses and initial SSE metadata return the same effective settings, and compact frontend message controls expose profile defaults and one-message overrides with answer labels.
 - Fourteen targeted adaptation, chat, streaming, and profile tests pass; the frontend production build passes.
 - Frontend visual polish now provides a normalized calm design system, consistent cards and controls, clearer active conversation and dashboard hierarchy, improved chat readability, responsive layouts, keyboard focus, and reduced-motion support; the production build passes.
+- Trusted-source video recommendations now use a seeded local catalog of active, verified official-source links across seven UPSC subjects, deterministic topic/language/time ranking, two-day dismissal cooldown, and a maximum of three results.
+- Read-only video listing, detail, and recommendation APIs are joined by explicit open/dismiss actions; opening records `video_opened` without changing mastery, while mentor `watch_video` actions require an exact trusted match and remain below urgent revision.
+- The responsive frontend adds verified video cards to Mentor Intelligence and explicit video requests in chat, with filters, reasons, loading/error/empty/link states, Watch, Save, dismiss, and post-video quiz guidance; targeted tests and the production build pass.
+- Backend cold start is HTTP-ready independently of Ollama, embeddings, and Chroma: heavy retrieval/provider construction is deferred to first chat/PDF use, staged startup logs identify settings/router/database readiness, and non-blocking `GET /health` reports component state. Validation reached application-ready in 1.80 seconds.
+- Community MVP adds eleven seeded UPSC study groups, posts, comments, saved posts, and reports with owner-only mutation, soft deletion, pagination/filtering, generic display names, public-PII and repeated-spam rejection, source URL validation, and hidden-content exclusion.
+- Community create/comment/save/report activity is recorded but never converted to mastery evidence or forgetting-risk input. The responsive Community page includes navigation, group and saved filters, a finite search/sort feed, post composer, source-domain labels, discussion detail, comments, ownership controls, reporting, and safety guidelines.
+- Sixteen targeted community, activity, and mastery tests pass; the frontend production build passes.
+- End-to-end stabilization passes 41 connected journey tests followed by the full 65-test backend regression and frontend production build. The only failure found was an order-dependent health test, corrected to verify that health reporting observes—but never initializes—shared embedding/vector state.
+- A development-only, idempotent demo fixture at `backend/scripts/seed_demo.py` creates `backend/data/demo.sqlite3` with a strong topic, weak/high-risk evidence, completed revision, quiz mistakes, mentor action, trusted video match, and two community posts; production startup never invokes it.
 
 ## Partially completed features
 
@@ -76,15 +85,15 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 
 ## Current blocker
 
-No known blocker recorded for the video recommendation milestone.
+No automated backend or build blocker. Final interactive browser clicking and console inspection remains a manual demo-machine check because local Edge did not return headless DOM/console output to the validation process.
 
 ## Current task
 
-Language, answer-depth, and answer-format adaptation — completed and tested.
+End-to-end stabilization and demo readiness — completed and tested.
 
 ## Exact next task
 
-Define and implement trusted-source video recommendations only when explicitly requested.
+No next feature is selected; define a new milestone only when explicitly requested.
 
 ## Relevant endpoints
 
@@ -123,6 +132,26 @@ Define and implement trusted-source video recommendations only when explicitly r
 - `POST /mentor/actions/{id}/complete`
 - `POST /mentor/actions/{id}/skip`
 - `GET /mentor/dashboard`
+- `GET /videos`
+- `GET /videos/{video_id}`
+- `GET /videos/recommendations`
+- `POST /videos/{video_id}/open`
+- `POST /videos/{video_id}/dismiss`
+- `GET /community/groups`
+- `GET /community/groups/{group_id}`
+- `GET /community/posts`
+- `POST /community/posts`
+- `GET /community/posts/{post_id}`
+- `PATCH /community/posts/{post_id}`
+- `DELETE /community/posts/{post_id}`
+- `GET /community/posts/{post_id}/comments`
+- `POST /community/posts/{post_id}/comments`
+- `PATCH /community/comments/{comment_id}`
+- `DELETE /community/comments/{comment_id}`
+- `POST /community/posts/{post_id}/save`
+- `DELETE /community/posts/{post_id}/save`
+- `GET /community/saved`
+- `POST /community/reports`
 
 ## Known limitations
 
@@ -132,11 +161,13 @@ Define and implement trusted-source video recommendations only when explicitly r
 - Mastery and forgetting risk are transparent heuristic estimates, not scientifically precise measurements.
 - Evidence support is foundational; richer quiz and answer-scoring producers remain future integrations.
 - Recommendation priorities are transparent heuristics, not scientific or psychological judgments.
-- Actions are limited to revision, quizzes, explanations, recall, and Mains practice; no video, community, or advanced planning recommendations are included.
+- Actions are limited to revision, quizzes, explanations, recall, Mains practice, and trusted videos; no community or advanced planning recommendations are included.
 - Dashboard visualizations intentionally use lightweight CSS bars rather than advanced charting.
 - Romanized Hindi or Punjabi is intentionally treated as ambiguous and uses the saved preference or English fallback.
 - Word ranges and response formats are prompt guidance, not strict truncation or deterministic repair.
-- No translation API, second LLM call, video recommendation, community, or current-affairs work is included.
+- The video catalog is deliberately small and manually curated; links are not scraped, downloaded, or automatically freshness-checked.
+- No translation API, second LLM call, or current-affairs work is included.
+- Community has no private messaging, live or voice rooms, advanced moderation dashboard, AI summaries/translation, educator verification, rankings, followers, or reputation system.
 
 ## Test commands
 
@@ -149,3 +180,18 @@ python -m pytest -q
 cd ..\upsc-ai-test-frontend-flat
 npm run build
 ```
+
+## Deterministic demo steps
+
+```powershell
+cd C:\Users\Guest1\AI-Study-Platform\backend
+.\.venv\Scripts\python.exe scripts\seed_demo.py
+$env:MEMORY_DB_PATH="$PWD\data\demo.sqlite3"
+.\.venv\Scripts\python.exe -m uvicorn src.main:app --host 127.0.0.1 --port 8000
+
+# In a second terminal
+cd C:\Users\Guest1\AI-Study-Platform\upsc-ai-test-frontend-flat
+npm run dev
+```
+
+Open the shown Vite URL, confirm `/health`, review Mentor Intelligence and profile settings, create two isolated conversations, upload a small PDF and ask a grounded question, exercise recommendation/video actions, then open Community to create, comment, save, and report a discussion. Confirm the sticky composer and scroll-to-latest control by scrolling away from a streaming answer.

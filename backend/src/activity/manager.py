@@ -13,6 +13,7 @@ SUPPORTED_EVENT_TYPES = {
     "revision_completed", "video_opened", "recommendation_accepted",
     "recommendation_skipped",
     "study_time_logged",
+    "community_post_created", "community_comment_created", "community_post_saved", "community_post_reported",
 }
 
 

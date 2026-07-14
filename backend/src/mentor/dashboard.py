@@ -26,6 +26,11 @@ class MentorDashboardService:
         weak = mastery["weak_topics"]
         risky = mastery["high_risk_topics"]
         primary = next_actions["action"]
+        video_matches = self.engine.videos.recommend(user_id=user_id,
+            subject=primary.subject if primary else today["top_subject"],
+            topic=primary.topic if primary else today["top_topic"],
+            language=profile.preferred_language if profile.preferred_language != "auto" else "english",
+            preferred_content_type=profile.preferred_content_type)
 
         sentences = []
         if today["top_subject"]:
@@ -67,6 +72,7 @@ class MentorDashboardService:
                 "primary": self._dump(primary),
                 "alternatives": [self._dump(item) for item in next_actions["alternatives"]],
             },
+            "recommended_videos": [{"video": self._dump(item["video"]), "reasons": item["reasons"]} for item in video_matches],
             "profile": {
                 "preferred_language": profile.preferred_language,
                 "preferred_depth": profile.preferred_depth,

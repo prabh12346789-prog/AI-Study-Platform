@@ -55,4 +55,4 @@ def test_dashboard_endpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(mentor, "engine", engine)
     response = TestClient(app).get("/mentor/dashboard")
     assert response.status_code == 200
-    assert set(response.json()) == {"today", "mentor_brief", "mastery", "recommendations", "profile", "recent_activity"}
+    assert set(response.json()) == {"today", "mentor_brief", "mastery", "recommendations", "recommended_videos", "profile", "recent_activity"}

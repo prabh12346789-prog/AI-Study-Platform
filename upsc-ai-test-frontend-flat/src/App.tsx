@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ProfilePanel } from './ProfilePanel'
 import { MentorDashboard } from './MentorDashboard'
+import { VideoRecommendations } from './VideoRecommendations'
+import { CommunityPage } from './CommunityPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
 import {
   API_BASE_URL,
@@ -55,6 +57,7 @@ function initialAssistantMessage(): Message {
 }
 
 export default function App() {
+  const [page, setPage] = useState<'study' | 'community'>('study')
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage()])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -71,8 +74,13 @@ export default function App() {
   const [messageLanguage, setMessageLanguage] = useState<LearnerProfile['preferred_language'] | null>(null)
   const [messageDepth, setMessageDepth] = useState<LearnerProfile['preferred_depth'] | null>(null)
   const [messageFormat, setMessageFormat] = useState<LearnerProfile['preferred_format'] | null>(null)
+  const [videoRequested, setVideoRequested] = useState(false)
+  const [showScrollLatest, setShowScrollLatest] = useState(false)
+  const [hasUnread, setHasUnread] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const workspaceRef = useRef<HTMLElement | null>(null)
+  const nearBottomRef = useRef(true)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const selectedMode = useMemo(() => MODES.find((item) => item.value === mode)!, [mode])
@@ -125,8 +133,29 @@ export default function App() {
     await refreshConversations()
   }
 
+  function scrollToLatest() {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    bottomRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'end' })
+    nearBottomRef.current = true
+    setShowScrollLatest(false)
+    setHasUnread(false)
+  }
+
+  function handleWorkspaceScroll() {
+    const workspace = workspaceRef.current
+    if (!workspace) return
+    const nearBottom = workspace.scrollHeight - workspace.scrollTop - workspace.clientHeight <= 200
+    nearBottomRef.current = nearBottom
+    setShowScrollLatest(!nearBottom)
+    if (nearBottom) setHasUnread(false)
+  }
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    if (nearBottomRef.current) {
+      const frame = requestAnimationFrame(scrollToLatest)
+      return () => cancelAnimationFrame(frame)
+    }
+    setHasUnread(true)
   }, [messages, isGenerating])
 
   function updateAssistant(messageId: string, updater: (current: string) => string) {
@@ -146,6 +175,7 @@ export default function App() {
     event?.preventDefault()
     const trimmed = question.trim()
     if (!trimmed || isGenerating) return
+    setVideoRequested(/\b(video|watch|youtube)\b/i.test(trimmed))
 
     const userMessage: Message = {
       id: id('user'),
@@ -249,6 +279,7 @@ export default function App() {
         <button className="new-chat" onClick={() => void newChat()}>
           <span>＋</span> New test chat
         </button>
+        <nav className="app-navigation" aria-label="Main navigation"><button className={page === 'study' ? 'active' : ''} onClick={() => setPage('study')}>Study Mentor</button><button className={page === 'community' ? 'active' : ''} onClick={() => setPage('community')}>Community</button></nav>
 
         <section className="side-section">
           <p className="eyebrow">Conversations</p>
@@ -299,7 +330,8 @@ export default function App() {
         </div>
       </aside>
 
-      <section className="workspace">
+      <section className={`workspace ${page}`} ref={workspaceRef} onScroll={handleWorkspaceScroll}>
+        {page === 'community' && <CommunityPage />}
         <header className="topbar">
           <div>
             <p className="eyebrow">AI study session</p>
@@ -359,6 +391,12 @@ export default function App() {
           ))}
           <div ref={bottomRef} />
         </section>
+
+        {videoRequested && <VideoRecommendations subject={activeSubject} topic={activeTopic} explicitRequest />}
+
+        {showScrollLatest && <button type="button" className="scroll-latest" aria-label="Scroll to latest message" onClick={scrollToLatest}>
+          <span aria-hidden="true">↓</span> Scroll to latest {hasUnread && <span className="unread-dot" aria-label="New message available" />}
+        </button>}
 
         <form className="composer" onSubmit={(event) => void submitQuestion(event)}>
           <div className="adaptation-controls" title="Message settings override your saved profile for this message only.">

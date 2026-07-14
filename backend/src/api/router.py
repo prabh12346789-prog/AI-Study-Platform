@@ -1,8 +1,16 @@
+import logging
 from fastapi import APIRouter
 
-from src.api.routes import activity, chat, conversations, mastery, mentor, pdf, profile
+log = logging.getLogger("startup")
+log.info("Router registration: importing lightweight route modules")
+from src.api.routes import activity, chat, community, conversations, mastery, mentor, pdf, profile, videos
+log.info("Router registration: route and model imports completed")
 
 api_router = APIRouter()
+
+api_router.include_router(community.router, prefix="/community", tags=["Community"])
+
+api_router.include_router(videos.router, prefix="/videos", tags=["Videos"])
 
 api_router.include_router(mentor.router, prefix="/mentor", tags=["Mentor"])
 
@@ -25,3 +33,4 @@ api_router.include_router(
     prefix="/pdf",
     tags=["PDF"],
 )
+log.info("Router registration completed")

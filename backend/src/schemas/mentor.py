@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
-ActionType = Literal["revise_topic", "take_quiz", "review_explanation", "practise_recall", "practise_mains_answer"]
+ActionType = Literal["revise_topic", "take_quiz", "review_explanation", "practise_recall", "practise_mains_answer", "watch_video"]
 Priority = Literal["low", "medium", "high", "urgent"]
 Status = Literal["pending", "accepted", "completed", "skipped", "expired"]
 

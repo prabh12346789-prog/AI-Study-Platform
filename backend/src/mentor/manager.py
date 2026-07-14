@@ -9,17 +9,19 @@ from src.mastery.models import LearningEvidence
 from src.memory.storage import get_session_factory
 from src.mentor.models import MentorRecommendation
 from src.profile.manager import ProfileManager
+from src.video.manager import VideoRecommendationService
 
-ACTION_TYPES = {"revise_topic", "take_quiz", "review_explanation", "practise_recall", "practise_mains_answer"}
+ACTION_TYPES = {"revise_topic", "take_quiz", "review_explanation", "practise_recall", "practise_mains_answer", "watch_video"}
 STATUSES = {"pending", "accepted", "completed", "skipped", "expired"}
 
 
 class MentorDecisionEngine:
-    def __init__(self, db_path: str | None = None, mastery_manager=None, profile_manager=None, activity_manager=None):
+    def __init__(self, db_path: str | None = None, mastery_manager=None, profile_manager=None, activity_manager=None, video_service=None):
         self._session_factory = get_session_factory(db_path=db_path)
         self.mastery = mastery_manager or MasteryManager(db_path)
         self.profile = profile_manager or ProfileManager(db_path)
         self.activity = activity_manager or ActivityManager(db_path)
+        self.videos = video_service or VideoRecommendationService(db_path, self.activity)
 
     @staticmethod
     def _level(score: float) -> str:
@@ -41,7 +43,11 @@ class MentorDecisionEngine:
         if recall_failure: action = "practise_recall"
         elif mastery.forgetting_risk >= .65 or overdue: action = "revise_topic"
         elif mains and sum((e.score or 0) for e in mains) / len(mains) < .5: action = "practise_mains_answer"
-        elif mastery.mastery_score < .5 and incorrect >= 2: action = "take_quiz" if preference == "quiz" else "review_explanation"
+        elif mastery.mastery_score < .5 and incorrect >= 2:
+            trusted_video = self.videos.recommend(subject=mastery.subject, topic=mastery.topic,
+                language=self.profile.get_or_create().preferred_language, preferred_content_type=preference,
+                repeated_mistakes=incorrect)
+            action = "watch_video" if preference == "video" and trusted_video else "take_quiz" if preference == "quiz" else "review_explanation"
         elif mastery.total_attempts == 0: action = "take_quiz"
         else: action = "take_quiz" if mastery.mastery_score < .7 else None
         failure_signal = min(1, incorrect / 3)
@@ -52,7 +58,7 @@ class MentorDecisionEngine:
         if overdue: reasons.append("Revision is overdue")
         if recall_failure: reasons.append("A recent recall attempt was unsuccessful")
         if incorrect >= 2: reasons.append(f"{incorrect} recent incorrect attempts")
-        titles = {"revise_topic": "Revise", "take_quiz": "Take a diagnostic quiz on", "review_explanation": "Review", "practise_recall": "Practise recall for", "practise_mains_answer": "Practise a Mains answer on"}
+        titles = {"revise_topic": "Revise", "take_quiz": "Take a diagnostic quiz on", "review_explanation": "Review", "practise_recall": "Practise recall for", "practise_mains_answer": "Practise a Mains answer on", "watch_video": "Watch a trusted video on"}
         return action, f"{titles[action]} {mastery.topic}", score, reasons, self._duration(available_minutes)
 
     def generate_actions(self, user_id="user_001", available_minutes=None):
@@ -86,6 +92,25 @@ class MentorDecisionEngine:
                     estimated_minutes=minutes, status="pending", source_mastery_id=mastery.id,
                     mastery_score_snapshot=mastery.mastery_score, valid_until=now + timedelta(days=7))
                 session.add(row); created.append(row)
+                incorrect_count = sum(e.evidence_type in {"quiz_incorrect", "recall_failure"} for e in evidence)
+                if action_type == "revise_topic" and self.profile.get_or_create(user_id).preferred_content_type == "video" and incorrect_count >= 2:
+                    trusted = self.videos.recommend(user_id=user_id, subject=mastery.subject, topic=mastery.topic,
+                        language=self.profile.get_or_create(user_id).preferred_language, preferred_content_type="video",
+                        repeated_mistakes=incorrect_count)
+                    exact = next((item for item in trusted if item["video"].topic.casefold() == mastery.topic.casefold()), None)
+                    video_duplicate = session.scalar(select(MentorRecommendation).where(
+                        MentorRecommendation.user_id == user_id, MentorRecommendation.subject == mastery.subject,
+                        MentorRecommendation.topic == mastery.topic, MentorRecommendation.action_type == "watch_video",
+                        MentorRecommendation.status.in_(["pending", "accepted"])))
+                    if exact and not video_duplicate:
+                        video_row = MentorRecommendation(id=str(uuid.uuid4()), user_id=user_id, subject=mastery.subject, topic=mastery.topic,
+                            action_type="watch_video", title=f"Watch a trusted video on {mastery.topic}",
+                            reason=["A verified exact-topic video is available", f"{incorrect_count} recent attempts show repeated difficulty"],
+                            priority_score=min(.59, max(.25, score - .15)), priority_level="medium",
+                            estimated_minutes=max(5, min(round(exact["video"].duration_seconds / 60), available_minutes or 10_000)),
+                            status="pending", source_mastery_id=mastery.id, mastery_score_snapshot=mastery.mastery_score,
+                            valid_until=now + timedelta(days=7))
+                        session.add(video_row); created.append(video_row)
             session.commit()
         return [row for row in self.list_actions(user_id=user_id) if row.status in {"pending", "accepted"}][:3]
 

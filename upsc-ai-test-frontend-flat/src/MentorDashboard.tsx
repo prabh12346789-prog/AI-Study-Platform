@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getMentorDashboard, MentorDashboardData, regenerateMentorActions, updateMentorAction } from './api'
+import { VideoRecommendations } from './VideoRecommendations'
 
 const minutes = (seconds: number) => `${Math.floor(seconds / 60)}m`
 
@@ -30,6 +31,7 @@ export function MentorDashboard({ trackingActive }: { trackingActive: boolean })
       <aside className="dashboard-side"><article><h3>Strengths</h3>{data.mentor_brief.strengths.slice(0, 3).map(item => <p key={item.id}>{item.topic} · {Math.round(item.mastery_score * 100)}%</p>)}{!data.mentor_brief.strengths.length && <p>More evidence needed.</p>}</article><article><h3>Needs attention</h3>{data.mentor_brief.weaknesses.slice(0, 3).map(item => <p key={item.id}>{item.topic} needs practice.</p>)}</article><article><h3>Likely to forget</h3>{data.mentor_brief.likely_to_forget.slice(0, 3).map(item => <p key={item.id}>{item.topic} · {item.risk_level} risk</p>)}</article><article><h3>Your preferences</h3><p>{data.profile.preferred_language} · {data.profile.preferred_depth} · {data.profile.preferred_format}</p></article></aside>
     </div>
     <div className="dashboard-lower"><article><h3>Subject mastery</h3>{data.mastery.subject_breakdown.map(item => <div className="dash-bar" key={item.subject}><span>{item.subject}</span><i><b style={{ width: `${item.mastery_score * 100}%` }} /></i><small>{Math.round(item.mastery_score * 100)}% — {item.mastery_score < .5 ? 'needs attention' : 'building well'}</small></div>)}</article><article><h3>Study-time breakdown</h3>{data.today.subject_breakdown.map(item => <div className="dash-bar" key={item.name}><span>{item.name}</span><i><b style={{ width: `${Math.max(3, data.today.study_seconds ? item.study_seconds / data.today.study_seconds * 100 : 3)}%` }} /></i><small>{minutes(item.study_seconds)}</small></div>)}</article><article><h3>Revision risk</h3><p>{data.mastery.high_risk_topics.length} high-risk topics. {data.mastery.high_risk_topics[0] ? `Review ${data.mastery.high_risk_topics[0].topic} first.` : 'No urgent revision risk detected.'}</p><h3>Alternatives</h3>{data.recommendations.alternatives.map(item => <p key={item.id}>{item.title} · {item.estimated_minutes}m</p>)}</article></div>
+    <VideoRecommendations subject={action?.subject ?? data.today.top_subject} topic={action?.topic ?? data.today.top_topic} initial={data.recommended_videos} />
     {feedback && <div className="saved-state">{feedback}</div>}{error && <div className="profile-state error">{error}</div>}<p className="privacy-note">Mentor insights are estimates based on your study activity, quiz evidence, revision history and saved preferences.</p>
   </section>
 }

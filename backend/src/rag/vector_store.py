@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Sequence
 
-import chromadb
+import logging
 
 from src.core.config import settings
 
@@ -28,9 +28,12 @@ class VectorStore:
 		db_path = str(Path(settings.CHROMA_DB_PATH))
 
 		if cls._client is None or cls._client_path != db_path:
+			logging.getLogger("startup").info("Chroma initialization started: %s", db_path)
+			import chromadb
 			Path(db_path).mkdir(parents=True, exist_ok=True)
 			cls._client = chromadb.PersistentClient(path=db_path)
 			cls._client_path = db_path
+			logging.getLogger("startup").info("Chroma client initialized")
 
 		return cls._client
 
@@ -45,6 +48,10 @@ class VectorStore:
 			cls._collection_name = collection_name
 
 		return cls._collection
+
+	@classmethod
+	def is_initialized(cls) -> bool:
+		return cls._client is not None and cls._collection is not None
 
 	def store_vectors(
 		self,

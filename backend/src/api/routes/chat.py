@@ -1,4 +1,5 @@
 import json
+from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -8,7 +9,10 @@ from src.services.orchestrator.service import AIOrchestrator, ConversationEvent
 
 router = APIRouter()
 
-orchestrator = AIOrchestrator()
+@lru_cache(maxsize=1)
+def get_orchestrator() -> AIOrchestrator:
+    print("[startup] First chat request: initializing Ollama/provider and retrieval services", flush=True)
+    return AIOrchestrator()
 
 
 def _format_sse_data(token: str) -> str:
@@ -21,7 +25,7 @@ async def chat(request: ChatRequest):
     print(f"[chat] request received: question={request.question!r}, mode={request.mode!r}", flush=True)
     print("[chat] before AIOrchestrator.process()", flush=True)
     try:
-        response = await orchestrator.process(
+        response = await get_orchestrator().process(
             question=request.question, mode=request.mode, conversation_id=request.conversation_id,
             subject=request.subject, topic=request.topic,
             preferred_language=request.preferred_language,
@@ -41,7 +45,7 @@ async def chat_stream(request: ChatRequest):
 
     async def event_stream():
         try:
-            async for token in orchestrator.process_stream(
+            async for token in get_orchestrator().process_stream(
                 question=request.question, mode=request.mode, conversation_id=request.conversation_id,
                 subject=request.subject, topic=request.topic,
                 preferred_language=request.preferred_language,

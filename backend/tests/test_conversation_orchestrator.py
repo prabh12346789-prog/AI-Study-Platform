@@ -58,11 +58,33 @@ def test_stream_saves_only_final_assistant_message(tmp_path):
         return [event async for event in service.process_stream("Explain inflation", ResponseMode.LEARN)]
     events = asyncio.run(collect())
     assert isinstance(events[0], ConversationEvent)
+    assert events[1:] == ["## Answer\n", "Final answer"]
+    assert len(events[1:]) > 1
     messages = service.memory_manager.get_messages(events[0].conversation_id)
     assert [m.role for m in messages] == ["user", "assistant"]
     assert messages[-1].content == "".join(events[1:])
     assert len(messages) == 2
     assert [e.event_type for e in service.activity_manager.list_events()][::-1] == ["question_asked", "answer_generated"]
+
+
+def test_failed_stream_does_not_save_partial_assistant_response(tmp_path):
+    service = orchestrator(tmp_path)
+
+    async def fail_after_token(prompt, mode, depth="standard"):
+        yield "partial"
+        raise RuntimeError("stream failed")
+
+    service.llm.generate_stream = fail_after_token
+
+    async def collect():
+        return [event async for event in service.process_stream("Explain inflation", ResponseMode.LEARN)]
+
+    with pytest.raises(RuntimeError, match="stream failed"):
+        asyncio.run(collect())
+    conversations = service.memory_manager.list_conversations()
+    messages = service.memory_manager.get_messages(conversations[0].id)
+    assert [message.role for message in messages] == ["user"]
+    assert [event.event_type for event in service.activity_manager.list_events()] == ["question_asked"]
 
 
 def test_failed_generation_does_not_record_answer_event(tmp_path):

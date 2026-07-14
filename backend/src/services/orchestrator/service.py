@@ -76,13 +76,50 @@ class AIOrchestrator:
             lines.append(f"{message['role'].upper()}: {message['content']}")
         return "\n".join(lines)
 
+    def _prepare_request(
+        self, question: str, mode: str, conversation_id: str | None,
+        subject: str | None, topic: str | None,
+        preferred_language: str | None, preferred_depth: str | None,
+        preferred_format: str | None, language: str | None,
+        depth: str | None, format: str | None,
+    ):
+        resolved_conversation_id = self._resolve_conversation(question, conversation_id)
+        classification = self.classifier.classify(question, subject=subject, topic=topic)
+        profile = self.profile_manager.get_or_create()
+        adaptation = self.adaptation_policy.resolve(
+            text=question, profile=profile, language=language or preferred_language,
+            depth=depth or preferred_depth, format=format or preferred_format,
+        )
+        history_messages = self.memory_manager.get_recent_history(
+            conversation_id=resolved_conversation_id, limit=settings.MAX_CHAT_HISTORY,
+        )
+        history_text = self._format_history(history_messages)
+        user_message = self.memory_manager.add_user_message(
+            conversation_id=resolved_conversation_id, content=question,
+        )
+        self.activity_manager.record_event(
+            "question_asked", datetime.now(timezone.utc),
+            conversation_id=resolved_conversation_id,
+            subject=str(classification["subject"]), topic=str(classification["topic"]),
+            metadata_json={"mode": self._mode_value(mode), "message_id": user_message.id},
+        )
+        return resolved_conversation_id, classification, adaptation, history_text
+
     async def _prepare_prompt(
         self, question: str, mode: str, conversation_id: str | None,
         subject: str | None = None, topic: str | None = None,
         preferred_language: str | None = None, preferred_depth: str | None = None,
         preferred_format: str | None = None,
         language: str | None = None, depth: str | None = None, format: str | None = None,
+        prepared=None,
     ):
+        if prepared is None:
+            prepared = self._prepare_request(
+                question, mode, conversation_id, subject, topic,
+                preferred_language, preferred_depth, preferred_format,
+                language, depth, format,
+            )
+        resolved_conversation_id, classification, adaptation, history_text = prepared
         print("[orchestrator] before SearchProvider.search()", flush=True)
         search_result = await asyncio.to_thread(
             self.search_provider.search,
@@ -91,32 +128,6 @@ class AIOrchestrator:
         print(
             f"[orchestrator] after SearchProvider.search(): provider={search_result.get('provider')!r}, sources={len(search_result.get('sources', []))}",
             flush=True,
-        )
-
-        resolved_conversation_id = self._resolve_conversation(question, conversation_id)
-        classification = self.classifier.classify(question, subject=subject, topic=topic)
-        profile = self.profile_manager.get_or_create()
-        adaptation = self.adaptation_policy.resolve(
-            text=question, profile=profile, language=language or preferred_language,
-            depth=depth or preferred_depth, format=format or preferred_format,
-        )
-
-        history_messages = self.memory_manager.get_recent_history(
-            conversation_id=resolved_conversation_id,
-            limit=settings.MAX_CHAT_HISTORY,
-        )
-        history_text = self._format_history(history_messages)
-
-        user_message = self.memory_manager.add_user_message(
-            conversation_id=resolved_conversation_id,
-            content=question,
-        )
-        self.activity_manager.record_event(
-            "question_asked", datetime.now(timezone.utc),
-            conversation_id=resolved_conversation_id,
-            subject=str(classification["subject"]),
-            topic=str(classification["topic"]),
-            metadata_json={"mode": self._mode_value(mode), "message_id": user_message.id},
         )
 
         print("[orchestrator] before PromptBuilder.build_prompt()", flush=True)
@@ -241,14 +252,20 @@ class AIOrchestrator:
         print(f"[orchestrator] process_stream() entry: question={question!r}, mode={mode!r}", flush=True)
         print("[stream] started", flush=True)
 
-        search_result, prompt, _sources, resolved_conversation_id, classification, adaptation = await self._prepare_prompt(
+        prepared = self._prepare_request(
             question, mode, conversation_id, subject, topic,
             preferred_language, preferred_depth, preferred_format,
             language, depth, format,
         )
+        resolved_conversation_id, classification, adaptation, _history_text = prepared
         yield ConversationEvent(
             resolved_conversation_id, str(classification["subject"]), str(classification["topic"]),
             str(adaptation["effective_language"]), str(adaptation["effective_depth"]), str(adaptation["effective_format"])
+        )
+        search_result, prompt, _sources, resolved_conversation_id, classification, adaptation = await self._prepare_prompt(
+            question, mode, conversation_id, subject, topic,
+            preferred_language, preferred_depth, preferred_format,
+            language, depth, format, prepared,
         )
 
         print("[orchestrator] before LLM.generate_stream()", flush=True)
@@ -267,22 +284,18 @@ class AIOrchestrator:
                 first_token = False
 
             parts.append(token)
+            yield token
 
         elapsed = time.perf_counter() - start
 
         print("[stream] finished", flush=True)
         print(f"LLM Generation Time: {elapsed:.2f} seconds", flush=True)
 
-        repaired_answer = repair_mode_format("".join(parts), mode)
-
-        # Stream the repaired response only after completion so normal and
-        # streaming endpoints have identical final Markdown.
-        for line in repaired_answer.splitlines(keepends=True):
-            yield line
+        completed_answer = "".join(parts)
 
         assistant_message = self.memory_manager.add_assistant_message(
             conversation_id=resolved_conversation_id,
-            content=repaired_answer,
+            content=completed_answer,
         )
         self.activity_manager.record_event(
             "answer_generated", datetime.now(timezone.utc),

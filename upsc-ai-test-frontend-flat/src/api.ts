@@ -160,58 +160,42 @@ export async function streamChat(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let eventName = 'message'
   let finished = false
 
-  while (!finished) {
-    const { value, done } = await reader.read()
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
-
-    const lines = buffer.split(/\r?\n/)
-    buffer = lines.pop() ?? ''
-
-    for (const rawLine of lines) {
-      if (rawLine.startsWith('event:')) {
-        eventName = rawLine.slice(6).trim()
-        continue
-      }
-
-      if (rawLine.startsWith('data:')) {
-        let data = rawLine.slice(5)
-        if (data.startsWith(' ')) data = data.slice(1)
-
-        const marker = data.trim()
-        if (eventName === 'conversation') {
-          const payload = JSON.parse(data) as { conversation_id: string; subject?: string; topic?: string; effective_language?: string; effective_depth?: string; effective_format?: string }
-          onConversation(payload.conversation_id, payload.subject, payload.topic, payload.effective_language, payload.effective_depth, payload.effective_format)
-          continue
-        }
-        if (eventName === 'done' || marker === 'END' || marker === '[DONE]') {
-          finished = true
-          break
-        }
-
-        const token = extractToken(data)
-        if (token) onToken(token)
-        continue
-      }
-
-      if (rawLine === '') {
-        eventName = 'message'
-      }
+  const processEvent = (block: string) => {
+    let eventName = 'message'
+    const dataLines: string[] = []
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('event:')) eventName = line.slice(6).trim()
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
     }
-
-    if (done) break
-  }
-
-  if (!finished && buffer.startsWith('data:')) {
-    const data = buffer.slice(5).replace(/^ /, '')
+    if (!dataLines.length) return
+    const data = dataLines.join('\n')
     const marker = data.trim()
-    if (marker !== 'END' && marker !== '[DONE]') {
+    if (eventName === 'conversation') {
+      const payload = JSON.parse(data) as { conversation_id: string; subject?: string; topic?: string; effective_language?: string; effective_depth?: string; effective_format?: string }
+      onConversation(payload.conversation_id, payload.subject, payload.topic, payload.effective_language, payload.effective_depth, payload.effective_format)
+    } else if (eventName === 'done' || marker === 'END' || marker === '[DONE]') {
+      finished = true
+    } else if (eventName === 'error') {
+      const payload = JSON.parse(data) as { detail?: string }
+      throw new Error(payload.detail || 'Streaming request failed.')
+    } else {
       const token = extractToken(data)
       if (token) onToken(token)
     }
   }
+
+  while (!finished) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+    const events = buffer.split(/\r?\n\r?\n/)
+    buffer = events.pop() ?? ''
+    for (const block of events) processEvent(block)
+    if (done) break
+  }
+
+  if (!finished && buffer.trim()) processEvent(buffer)
 }
 
 async function conversationRequest<T>(path = '', init?: RequestInit): Promise<T> {

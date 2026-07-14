@@ -30,6 +30,7 @@ class OllamaLLM(BaseLLM):
             "model": self.model_name,
             "prompt": prompt,
             "stream": True,
+            "keep_alive": "5m",
             "options": {
                 "temperature": config["temperature"],
                 "top_p": config["top_p"],
@@ -50,7 +51,10 @@ class OllamaLLM(BaseLLM):
                         if not line:
                             continue
 
-                        data = json.loads(line)
+                        try:
+                            data = json.loads(line)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
 
                         token = data.get("response", "")
                         if token:

@@ -2509,3 +2509,276 @@ INFO:     127.0.0.1:50334 - "GET /conversations HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52277 - "GET /profile/insights HTTP/1.1" 200 OK
 INFO:     127.0.0.1:64201 - "GET /profile HTTP/1.1" 200 OK
 INFO:     127.0.0.1:63919 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61298 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58401 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58967 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60905 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52934 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61298 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60905 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58967 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52934 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58967 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58401 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61298 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61298 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58520 - "GET /conversations/5ea5084f-ce4e-45ce-b98d-e9b5c4769282/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57507 - "OPTIONS /activity/events HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57507 - "POST /activity/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51615 - "GET /community/groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52981 - "GET /community/posts?sort=newest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52981 - "GET /community/posts?sort=newest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51615 - "GET /community/groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61049 - "GET /community/posts?group_id=e5080581-e219-4d85-af32-56bf9f8a419a&sort=newest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65288 - "GET /community/posts?sort=newest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58435 - "POST /activity/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54014 - "POST /activity/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54014 - "POST /activity/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:52672 - "POST /activity/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:55505 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50148 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63960 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58792 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55505 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50334 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50334 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50334 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53116 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49419 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65485 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58362 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53116 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53116 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65485 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53116 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60475 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49285 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52226 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64310 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51603 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60475 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64310 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51603 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60475 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52226 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49285 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51603 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52226 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55312 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51340 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55312 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52570 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51340 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55312 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51340 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51340 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55426 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54908 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53514 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49726 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61480 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65107 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61480 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53514 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65107 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49726 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61480 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54908 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61480 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55823 - "OPTIONS /chat/stream HTTP/1.1" 200 OK
+[chat] stream request received: question='what are funademntal rights', mode=<ResponseMode.LEARN: 'learn'>
+INFO:     127.0.0.1:55823 - "POST /chat/stream HTTP/1.1" 200 OK
+[startup] First chat request: initializing Ollama/provider and retrieval services
+[orchestrator] process_stream() entry: question='what are funademntal rights', mode=<ResponseMode.LEARN: 'learn'>
+[stream] started
+[orchestrator] before SearchProvider.search()
+[search-provider] search start: question='what are funademntal rights'
+[search-provider] strategy=local_first -> LocalSearch
+[local-search] start: question='what are funademntal rights'
+[local-search] before Retriever.retrieve()
+[local-search] after Retriever.retrieve(): chunks=0
+[local-search] finished with 0 chunks
+[search-provider] local search empty -> WebSearch
+[web-search] start: question='what are funademntal rights'
+[web-search] end: results=0
+[search-provider] search finished: provider='local', context_present=False
+[orchestrator] after SearchProvider.search(): provider='local', sources=0
+[orchestrator] before PromptBuilder.build_prompt()
+[orchestrator] after PromptBuilder.build_prompt()
+================================================================================
+PROMPT LENGTH: 1681
+================================================================================
+System Instructions:
+STRICT FORMATTING RULES:
+
+- Return the answer in Markdown.
+- Use the exact headings required by the selected mode.
+- Use bullet points under every heading; every bullet must begin with "- ".
+- Do not write long continuous paragraphs.
+- Keep every bullet concise and focused on one main fact.
+- Use bold text for Articles, Acts, years, institutions, and key terms.
+- Do not add unnecessary introductions.
+- Do not repeat the question.
+- Do not invent constitutional provisions or factual details.
+
+Mode-specific Formatting Instructions:
+Explain the topic for UPSC learning.
+
+Use exactly this structure:
+
+## Definition
+- Give a simple definition.
+
+## Explanation
+- Explain the concept using short bullet points.
+
+## Example
+- Give one relevant example.
+
+## Importance
+- Explain why it matters.
+
+## UPSC Relevance
+- Mention relevant paper, syllabus area, Articles, Acts or topics.
+
+Maximum 220 words.
+
+Effective Response Adaptation (apply at prompt level; the selected UPSC mode remains authoritative):
+- Respond in english. Preserve constitutional Articles, Acts, official names, dates, citations, and source metadata; include English technical terms in brackets when useful.
+- Depth: standard (quick: direct and about 120-250 words; standard: concepts, examples and exam relevance in about 300-550 words; detailed: broader analysis, dimensions and limitations in about 600-900 words).
+- Format: mixed (bullets: concise facts; structured: headings with points; explanation: short readable paragraphs; mixed: short explanation plus key bullets).
+
+Current User Question:
+what are funademntal rights
+
+Final Reminder:
+Follow the requested Markdown structure exactly.
+================================================================================
+[orchestrator] before LLM.generate_stream()
+==============================
+Generation Profile
+
+Mode: ResponseMode.LEARN
+Temperature: 0.3
+Top P: 0.9
+Max Tokens: 650
+==============================
+INFO:     127.0.0.1:61065 - "OPTIONS /activity/events HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61065 - "POST /activity/events HTTP/1.1" 201 Created
+[stream] first token
+INFO:     127.0.0.1:56340 - "POST /activity/events HTTP/1.1" 201 Created
+[stream] finished
+LLM Generation Time: 45.59 seconds
+[orchestrator] after LLM.generate_stream()
+INFO:     127.0.0.1:55823 - "GET /conversations HTTP/1.1" 200 OK
+[chat] stream request received: question='what is DPSPs', mode=<ResponseMode.LEARN: 'learn'>
+INFO:     127.0.0.1:49473 - "POST /chat/stream HTTP/1.1" 200 OK
+[orchestrator] process_stream() entry: question='what is DPSPs', mode=<ResponseMode.LEARN: 'learn'>
+[stream] started
+[orchestrator] before SearchProvider.search()
+[search-provider] search start: question='what is DPSPs'
+[search-provider] strategy=local_first -> LocalSearch
+[local-search] start: question='what is DPSPs'
+[local-search] before Retriever.retrieve()
+[local-search] after Retriever.retrieve(): chunks=0
+[local-search] finished with 0 chunks
+[search-provider] local search empty -> WebSearch
+[web-search] start: question='what is DPSPs'
+[web-search] end: results=0
+[search-provider] search finished: provider='local', context_present=False
+[orchestrator] after SearchProvider.search(): provider='local', sources=0
+[orchestrator] before PromptBuilder.build_prompt()
+[orchestrator] after PromptBuilder.build_prompt()
+================================================================================
+PROMPT LENGTH: 2603
+================================================================================
+System Instructions:
+STRICT FORMATTING RULES:
+
+- Return the answer in Markdown.
+- Use the exact headings required by the selected mode.
+- Use bullet points under every heading; every bullet must begin with "- ".
+- Do not write long continuous paragraphs.
+- Keep every bullet concise and focused on one main fact.
+- Use bold text for Articles, Acts, years, institutions, and key terms.
+- Do not add unnecessary introductions.
+- Do not repeat the question.
+- Do not invent constitutional provisions or factual details.
+
+Mode-specific Formatting Instructions:
+Explain the topic for UPSC learning.
+
+Use exactly this structure:
+
+## Definition
+- Give a simple definition.
+
+## Explanation
+- Explain the concept using short bullet points.
+
+## Example
+- Give one relevant example.
+
+## Importance
+- Explain why it matters.
+
+## UPSC Relevance
+- Mention relevant paper, syllabus area, Articles, Acts or topics.
+
+Maximum 220 words.
+
+Conversation History:
+USER: what are funademntal rights
+ASSISTANT: ## Definition
+- Fundamental rights are basic human rights that protect individuals from discrimination and abuse by governments, corporations, or other entities.
+
+## Explanation
+- These rights apply to all people equally.
+- They include civil liberties such as freedom of speech and religion.
+- Economic and social rights like the right to work and education are also included.
+
+## Example
+- Freedom of assembly is a fundamental right that allows individuals to gather peacefully for any purpose.
+
+## Importance
+- Fundamental rights ensure fair treatment under law.
+- They protect vulnerable groups from exploitation.
+- Upholding these rights promotes a just society.
+
+## UPSC Relevance
+- Article 19 and 20 of the Constitution (Articles: 19, 20).
+- Civics syllabus area on human rights.
+- Understanding fundamental rights is crucial for the civil services examination.
+
+Effective Response Adaptation (apply at prompt level; the selected UPSC mode remains authoritative):
+- Respond in english. Preserve constitutio
+================================================================================
+[orchestrator] before LLM.generate_stream()
+==============================
+Generation Profile
+
+Mode: ResponseMode.LEARN
+Temperature: 0.3
+Top P: 0.9
+Max Tokens: 300
+==============================
+[stream] first token
+INFO:     127.0.0.1:56558 - "OPTIONS /conversations/27e92c4b-d177-4d21-805a-83fceb21d112 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "DELETE /conversations/27e92c4b-d177-4d21-805a-83fceb21d112 HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:56558 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "OPTIONS /conversations/4e373445-3244-401e-9315-6b5328d2adfa HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "DELETE /conversations/4e373445-3244-401e-9315-6b5328d2adfa HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:56558 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "OPTIONS /conversations/7e4e578a-d7ca-46bb-8d2f-6c66fd1162bd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "DELETE /conversations/7e4e578a-d7ca-46bb-8d2f-6c66fd1162bd HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:56558 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "OPTIONS /conversations/874ba341-311e-497d-b4fa-7364fd14fe5f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56558 - "DELETE /conversations/874ba341-311e-497d-b4fa-7364fd14fe5f HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:56558 - "GET /conversations HTTP/1.1" 200 OK
+[stream] finished
+LLM Generation Time: 36.21 seconds
+[orchestrator] after LLM.generate_stream()
+INFO:     127.0.0.1:49473 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52586 - "POST /activity/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62533 - "POST /activity/events HTTP/1.1" 201 Created
+ 

@@ -32,6 +32,7 @@ type Message = {
   createdAt: string
   error?: boolean
   adaptation?: { language: string; depth: string; format: string }
+  status?: string
 }
 
 const MODES: Array<{ value: StudyMode; label: string; hint: string }> = [
@@ -57,7 +58,7 @@ function initialAssistantMessage(): Message {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'study' | 'community'>('study')
+  const [page, setPage] = useState<'dashboard' | 'chat' | 'community'>('dashboard')
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage()])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -76,7 +77,7 @@ export default function App() {
   const [messageFormat, setMessageFormat] = useState<LearnerProfile['preferred_format'] | null>(null)
   const [videoRequested, setVideoRequested] = useState(false)
   const [showScrollLatest, setShowScrollLatest] = useState(false)
-  const [hasUnread, setHasUnread] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
@@ -104,6 +105,7 @@ export default function App() {
     setActiveSubject(null)
     setActiveTopic(null)
     setMessages([initialAssistantMessage()])
+    setPage('chat')
     await refreshConversations()
   }
 
@@ -115,6 +117,7 @@ export default function App() {
     setMessages(stored.map((message) => ({
       id: String(message.id), role: message.role, content: message.content, createdAt: message.timestamp,
     })))
+    setPage('chat')
   }
 
   async function renameChat(conversation: Conversation) {
@@ -138,7 +141,7 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'end' })
     nearBottomRef.current = true
     setShowScrollLatest(false)
-    setHasUnread(false)
+    setUnreadCount(0)
   }
 
   function handleWorkspaceScroll() {
@@ -147,7 +150,7 @@ export default function App() {
     const nearBottom = workspace.scrollHeight - workspace.scrollTop - workspace.clientHeight <= 200
     nearBottomRef.current = nearBottom
     setShowScrollLatest(!nearBottom)
-    if (nearBottom) setHasUnread(false)
+    if (nearBottom) setUnreadCount(0)
   }
 
   useEffect(() => {
@@ -155,7 +158,7 @@ export default function App() {
       const frame = requestAnimationFrame(scrollToLatest)
       return () => cancelAnimationFrame(frame)
     }
-    setHasUnread(true)
+    setUnreadCount(current => Math.min(99, current + 1))
   }, [messages, isGenerating])
 
   function updateAssistant(messageId: string, updater: (current: string) => string) {
@@ -188,6 +191,7 @@ export default function App() {
       id: assistantId,
       role: 'assistant',
       content: '',
+      status: 'Preparing model…',
       createdAt: new Date().toISOString(),
     }
 
@@ -205,13 +209,32 @@ export default function App() {
         ...(messageFormat ? { format: messageFormat } : {}),
       }
       if (useStreaming) {
-        await streamChat(payload, (token) => updateAssistant(assistantId, (current) => current + token),
+        let pending = ''
+        let flushTimer: number | undefined
+        const flushTokens = () => {
+          if (!pending) return
+          const text = pending
+          pending = ''
+          updateAssistant(assistantId, (current) => current + text)
+          setMessages(current => current.map(message => message.id === assistantId ? { ...message, status: undefined } : message))
+        }
+        const retrievalTimer = window.setTimeout(() => {
+          setMessages(current => current.map(message => message.id === assistantId && !message.content ? { ...message, status: 'Retrieving relevant context…' } : message))
+        }, 250)
+        await streamChat(payload, (token) => {
+          pending += token
+          if (flushTimer === undefined) flushTimer = window.setTimeout(() => { flushTimer = undefined; flushTokens() }, 45)
+        },
           (id, subject, topic, language, depth, format) => {
+            window.clearTimeout(retrievalTimer)
+            setMessages(current => current.map(message => message.id === assistantId && !message.content ? { ...message, status: 'Generating answer…' } : message))
             setConversationId(id)
             setActiveSubject(subject ?? null)
             setActiveTopic(topic ?? null)
             setAssistantAdaptation(assistantId, language, depth, format)
           }, controller.signal)
+        if (flushTimer !== undefined) window.clearTimeout(flushTimer)
+        flushTokens()
       } else {
         const response = await sendChat(payload, controller.signal)
         setConversationId(response.conversation_id)
@@ -279,13 +302,13 @@ export default function App() {
         <button className="new-chat" onClick={() => void newChat()}>
           <span>＋</span> New test chat
         </button>
-        <nav className="app-navigation" aria-label="Main navigation"><button className={page === 'study' ? 'active' : ''} onClick={() => setPage('study')}>Study Mentor</button><button className={page === 'community' ? 'active' : ''} onClick={() => setPage('community')}>Community</button></nav>
+        <nav className="app-navigation" aria-label="Main navigation"><button className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}>Dashboard</button><button className={page === 'chat' ? 'active' : ''} onClick={() => setPage('chat')}>Chat</button><button className={page === 'community' ? 'active' : ''} onClick={() => setPage('community')}>Community</button></nav>
 
         <section className="side-section">
           <p className="eyebrow">Conversations</p>
           {conversations.map((conversation) => (
             <div className={`status-card conversation-item ${conversation.id === conversationId ? 'active' : ''}`} key={conversation.id}>
-              <button className="secondary-button" aria-pressed={conversation.id === conversationId} onClick={() => void selectConversation(conversation.id)}>
+              <button className="secondary-button" title={conversation.title} aria-pressed={conversation.id === conversationId} onClick={() => void selectConversation(conversation.id)}>
                 {conversation.title}
               </button>
               <button className="icon-button" aria-label={`Rename ${conversation.title}`} title="Rename" onClick={() => void renameChat(conversation)}>Edit</button>
@@ -294,8 +317,8 @@ export default function App() {
           ))}
         </section>
 
-        <section className="side-section">
-          <p className="eyebrow">Backend</p>
+        <details className="side-section technical-details">
+          <summary>Backend status</summary>
           <div className="status-card">
             <span className={`status-dot ${backendOnline === true ? 'online' : backendOnline === false ? 'offline' : ''}`} />
             <div>
@@ -303,12 +326,12 @@ export default function App() {
               <small>{API_BASE_URL}</small>
             </div>
           </div>
-        </section>
+        </details>
 
-        <section className="side-section">
-          <p className="eyebrow">Current request contract</p>
+        <details className="side-section technical-details">
+          <summary>Request details</summary>
           <pre className="contract">{`POST /chat/stream\n{\n  "question": "...",\n  "mode": "${mode}",\n  "conversation_id": "${conversationId ?? '...'}"\n}`}</pre>
-        </section>
+        </details>
 
         <section className="side-section pdf-section">
           <p className="eyebrow">RAG test</p>
@@ -332,6 +355,12 @@ export default function App() {
 
       <section className={`workspace ${page}`} ref={workspaceRef} onScroll={handleWorkspaceScroll}>
         {page === 'community' && <CommunityPage />}
+        {page === 'dashboard' && <div className="dashboard-page">
+          <header className="topbar dashboard-topbar"><div><p className="eyebrow">Mentor overview</p><h1>Your study dashboard</h1><small>Progress, next actions, revision risk, and learning preferences.</small></div><button className="send-button" onClick={() => setPage('chat')}>Open Chat</button></header>
+          <MentorDashboard trackingActive={trackingActive} />
+          <ProfilePanel />
+        </div>}
+        {page === 'chat' && <div className="chat-page">
         <header className="topbar">
           <div>
             <p className="eyebrow">AI study session</p>
@@ -364,10 +393,7 @@ export default function App() {
           <span>Model settings are selected by the backend generation profile.</span>
         </div>
 
-        <MentorDashboard trackingActive={trackingActive} />
-        <ProfilePanel />
-
-        <section className="message-list" aria-live="polite">
+        <section className="message-list chat-messages" aria-live="polite">
           {messages.map((message) => (
             <article key={message.id} className={`message-row ${message.role}`}>
               <div className="avatar">{message.role === 'user' ? 'You' : 'AI'}</div>
@@ -381,8 +407,9 @@ export default function App() {
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
                   </div>
                 ) : (
-                  <div className="typing" aria-label="Assistant is generating">
-                    <span /> <span /> <span />
+                  <div className="stream-status" role="status" aria-live="polite">
+                    <div className="typing" aria-hidden="true"><span /> <span /> <span /></div>
+                    <span>{message.status ?? 'Preparing model…'}</span>
                   </div>
                 )}
                 {message.adaptation && <small className="adaptation-label">{message.adaptation.language} · {message.adaptation.depth} · {message.adaptation.format}</small>}
@@ -395,10 +422,10 @@ export default function App() {
         {videoRequested && <VideoRecommendations subject={activeSubject} topic={activeTopic} explicitRequest />}
 
         {showScrollLatest && <button type="button" className="scroll-latest" aria-label="Scroll to latest message" onClick={scrollToLatest}>
-          <span aria-hidden="true">↓</span> Scroll to latest {hasUnread && <span className="unread-dot" aria-label="New message available" />}
+          <span aria-hidden="true">↓</span> Latest {unreadCount > 0 && <span className="unread-count" aria-label={`${unreadCount} new message updates`}>{unreadCount}</span>}
         </button>}
 
-        <form className="composer" onSubmit={(event) => void submitQuestion(event)}>
+        <div className="chat-composer-shell"><form className="composer" onSubmit={(event) => void submitQuestion(event)}>
           <div className="adaptation-controls" title="Message settings override your saved profile for this message only.">
             <label>Language<select aria-label="Response language" disabled={isGenerating || !profileDefaults} value={messageLanguage ?? profileDefaults?.preferred_language ?? 'auto'} onChange={event => setMessageLanguage(event.target.value as LearnerProfile['preferred_language'])}><option value="auto">Auto</option><option value="english">English</option><option value="hindi">Hindi</option><option value="punjabi">Punjabi</option></select></label>
             <label>Depth<select aria-label="Answer depth" disabled={isGenerating || !profileDefaults} value={messageDepth ?? profileDefaults?.preferred_depth ?? 'standard'} onChange={event => setMessageDepth(event.target.value as LearnerProfile['preferred_depth'])}><option value="quick">Quick</option><option value="standard">Standard</option><option value="detailed">Detailed</option></select></label>
@@ -432,7 +459,8 @@ export default function App() {
               </button>
             )}
           </div>
-        </form>
+        </form></div>
+        </div>}
       </section>
     </main>
   )

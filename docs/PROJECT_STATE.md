@@ -72,6 +72,7 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 - Community create/comment/save/report activity is recorded but never converted to mastery evidence or forgetting-risk input. The responsive Community page includes navigation, group and saved filters, a finite search/sort feed, post composer, source-domain labels, discussion detail, comments, ownership controls, reporting, and safety guidelines.
 - Sixteen targeted community, activity, and mastery tests pass; the frontend production build passes.
 - End-to-end stabilization passes 41 connected journey tests followed by the full 65-test backend regression and frontend production build. The only failure found was an order-dependent health test, corrected to verify that health reporting observes—but never initializes—shared embedding/vector state.
+- Chat SSE now emits conversation/settings metadata before retrieval, forwards each Ollama delta as a named token event, ends with a non-visible done event, and persists the assistant response once only after successful completion. The frontend parses split SSE event blocks incrementally and batches visible deltas for 45 ms, with preparation/retrieval/generation status text and reader-safe scrolling. Live Ollama validation produced 181 cold and 196 warm chunks; first-token time measured 18.41 seconds cold and 2.27 seconds warm.
 - A development-only, idempotent demo fixture at `backend/scripts/seed_demo.py` creates `backend/data/demo.sqlite3` with a strong topic, weak/high-risk evidence, completed revision, quiz mistakes, mentor action, trusted video match, and two community posts; production startup never invokes it.
 
 ## Partially completed features
@@ -89,7 +90,7 @@ No automated backend or build blocker. Final interactive browser clicking and co
 
 ## Current task
 
-End-to-end stabilization and demo readiness — completed and tested.
+Chat streaming speed and progressive rendering — completed and tested.
 
 ## Exact next task
 

@@ -65,11 +65,22 @@ async def chat_stream(request: ChatRequest):
                         }, separators=(",", ":"))
                     )
                 else:
-                    yield _format_sse_data(token)
+                    yield "event: token\n" + _format_sse_data(
+                        json.dumps({"text": token}, separators=(",", ":"))
+                    )
+            yield "event: done\n" + _format_sse_data('{"status":"complete"}')
         except ValueError as exc:
             yield "event: error\n" + _format_sse_data(json.dumps({"detail": str(exc)}))
 
         # Closing the SSE response is the completion signal.  Do not append a
         # sentinel token: clients otherwise render it as part of the answer.
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

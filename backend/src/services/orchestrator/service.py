@@ -1,24 +1,71 @@
 import asyncio
+import re
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from src.ai.factory import get_llm
+from src.activity.manager import ActivityManager
+from src.activity.taxonomy import SubjectTopicClassifier
 from src.core.config import settings
 from src.memory.manager import MemoryManager
+from src.profile.manager import ProfileManager
+from src.services.adaptation import AdaptationPolicy
 from src.rag.prompt_builder import PromptBuilder
 from src.search.provider import SearchProvider
 from src.services.orchestrator.prompts import COMMON_FORMAT_RULES, SYSTEM_PROMPTS
 from src.services.orchestrator.formatter import format_response
+from src.services.orchestrator.format_repair import repair_mode_format
+
+
+@dataclass(frozen=True)
+class ConversationEvent:
+    conversation_id: str
+    subject: str
+    topic: str
+    effective_language: str
+    effective_depth: str
+    effective_format: str
 
 
 class AIOrchestrator:
 
-    def __init__(self, memory_manager: MemoryManager | None = None):
+    def __init__(
+        self, memory_manager: MemoryManager | None = None,
+        activity_manager: ActivityManager | None = None,
+        profile_manager: ProfileManager | None = None,
+    ):
         self.llm = get_llm()
         self.search_provider = SearchProvider()
         self.prompt_builder = PromptBuilder()
         self.memory_manager = memory_manager or MemoryManager()
-        self._conversation_id: str | None = None
+        self.activity_manager = activity_manager or ActivityManager()
+        self.profile_manager = profile_manager or ProfileManager()
+        self.classifier = SubjectTopicClassifier()
+        self.adaptation_policy = AdaptationPolicy()
+
+    @staticmethod
+    def _mode_value(mode: str) -> str:
+        return getattr(mode, "value", mode)
+
+    @staticmethod
+    def _title_from_question(question: str) -> str:
+        cleaned = re.sub(r"[^\w\s-]", " ", question).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        cleaned = re.sub(r"^(please\s+)?(explain|describe|discuss|tell me about)\s+", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"\s+(in\s+)?(simple|easy|brief)\s+(words|terms|language)$", "", cleaned, flags=re.I)
+        return " ".join(cleaned.split()[:6]) or "New Conversation"
+
+    def _resolve_conversation(self, question: str, conversation_id: str | None) -> str:
+        if conversation_id is None:
+            return self.memory_manager.create_conversation(self._title_from_question(question)).id
+        conversation = self.memory_manager.get_conversation(conversation_id)
+        if conversation is None:
+            raise ValueError(f"Conversation '{conversation_id}' not found")
+        if conversation.title == "New Conversation" and not self.memory_manager.get_messages(conversation_id):
+            self.memory_manager.rename_conversation(conversation_id, self._title_from_question(question))
+        return conversation_id
 
     def _format_history(self, history_messages: list[dict[str, str]]) -> str:
         if not history_messages:
@@ -29,7 +76,13 @@ class AIOrchestrator:
             lines.append(f"{message['role'].upper()}: {message['content']}")
         return "\n".join(lines)
 
-    async def _prepare_prompt(self, question: str, mode: str):
+    async def _prepare_prompt(
+        self, question: str, mode: str, conversation_id: str | None,
+        subject: str | None = None, topic: str | None = None,
+        preferred_language: str | None = None, preferred_depth: str | None = None,
+        preferred_format: str | None = None,
+        language: str | None = None, depth: str | None = None, format: str | None = None,
+    ):
         print("[orchestrator] before SearchProvider.search()", flush=True)
         search_result = await asyncio.to_thread(
             self.search_provider.search,
@@ -40,19 +93,30 @@ class AIOrchestrator:
             flush=True,
         )
 
-        if self._conversation_id is None:
-            conversation = self.memory_manager.create_conversation(title=f"{mode} chat")
-            self._conversation_id = conversation.id
+        resolved_conversation_id = self._resolve_conversation(question, conversation_id)
+        classification = self.classifier.classify(question, subject=subject, topic=topic)
+        profile = self.profile_manager.get_or_create()
+        adaptation = self.adaptation_policy.resolve(
+            text=question, profile=profile, language=language or preferred_language,
+            depth=depth or preferred_depth, format=format or preferred_format,
+        )
 
         history_messages = self.memory_manager.get_recent_history(
-            conversation_id=self._conversation_id,
+            conversation_id=resolved_conversation_id,
             limit=settings.MAX_CHAT_HISTORY,
         )
         history_text = self._format_history(history_messages)
 
-        self.memory_manager.add_user_message(
-            conversation_id=self._conversation_id,
+        user_message = self.memory_manager.add_user_message(
+            conversation_id=resolved_conversation_id,
             content=question,
+        )
+        self.activity_manager.record_event(
+            "question_asked", datetime.now(timezone.utc),
+            conversation_id=resolved_conversation_id,
+            subject=str(classification["subject"]),
+            topic=str(classification["topic"]),
+            metadata_json={"mode": self._mode_value(mode), "message_id": user_message.id},
         )
 
         print("[orchestrator] before PromptBuilder.build_prompt()", flush=True)
@@ -76,6 +140,13 @@ class AIOrchestrator:
                 + prompt_body
             )
 
+        prompt_sections.append(
+            "Effective Response Adaptation (apply at prompt level; the selected UPSC mode remains authoritative):\n"
+            f"- Respond in {adaptation['effective_language']}. Preserve constitutional Articles, Acts, official names, dates, citations, and source metadata; include English technical terms in brackets when useful.\n"
+            f"- Depth: {adaptation['effective_depth']} (quick: direct and about 120-250 words; standard: concepts, examples and exam relevance in about 300-550 words; detailed: broader analysis, dimensions and limitations in about 600-900 words).\n"
+            f"- Format: {adaptation['effective_format']} (bullets: concise facts; structured: headings with points; explanation: short readable paragraphs; mixed: short explanation plus key bullets)."
+        )
+
         prompt_sections.extend(
             [
                 "Current User Question:\n" + question,
@@ -90,13 +161,23 @@ class AIOrchestrator:
         print(prompt[:2000])
         print("=" * 80)
 
-        return search_result, prompt, sources
+        return search_result, prompt, sources, resolved_conversation_id, classification, adaptation
 
-    async def process(self, question: str, mode: str):
+    async def process(
+        self, question: str, mode: str, conversation_id: str | None = None,
+        subject: str | None = None, topic: str | None = None,
+        preferred_language: str | None = None, preferred_depth: str | None = None,
+        preferred_format: str | None = None,
+        language: str | None = None, depth: str | None = None, format: str | None = None,
+    ):
 
         print(f"[orchestrator] process() entry: question={question!r}, mode={mode!r}", flush=True)
 
-        search_result, prompt, sources = await self._prepare_prompt(question, mode)
+        search_result, prompt, sources, resolved_conversation_id, classification, adaptation = await self._prepare_prompt(
+            question, mode, conversation_id, subject, topic,
+            preferred_language, preferred_depth, preferred_format,
+            language, depth, format,
+        )
 
         print("[orchestrator] before LLM.generate()", flush=True)
 
@@ -105,7 +186,9 @@ class AIOrchestrator:
         answer = await self.llm.generate(
             prompt=prompt,
             mode=mode,
+            depth=adaptation["effective_depth"],
         )
+        answer = repair_mode_format(answer, mode)
 
         elapsed = time.perf_counter() - start
 
@@ -114,9 +197,21 @@ class AIOrchestrator:
         print("[orchestrator] after LLM.generate()", flush=True)
         print("[orchestrator] before formatter", flush=True)
 
-        self.memory_manager.add_assistant_message(
-            conversation_id=self._conversation_id,
+        assistant_message = self.memory_manager.add_assistant_message(
+            conversation_id=resolved_conversation_id,
             content=answer,
+        )
+        self.activity_manager.record_event(
+            "answer_generated", datetime.now(timezone.utc),
+            conversation_id=resolved_conversation_id,
+            subject=str(classification["subject"]),
+            topic=str(classification["topic"]),
+            metadata_json={
+                "mode": self._mode_value(mode),
+                "provider": search_result.get("provider", "local"),
+                "message_id": assistant_message.id,
+                "success": True,
+            },
         )
 
         response = format_response(
@@ -124,17 +219,37 @@ class AIOrchestrator:
             provider=search_result.get("provider", "local"),
             sources=sources,
         )
+        response["conversation_id"] = resolved_conversation_id
+        response["subject"] = classification["subject"]
+        response["topic"] = classification["topic"]
+        response["effective_language"] = adaptation["effective_language"]
+        response["effective_depth"] = adaptation["effective_depth"]
+        response["effective_format"] = adaptation["effective_format"]
 
         print("[orchestrator] after formatter", flush=True)
 
         return response
 
-    async def process_stream(self, question: str, mode: str) -> AsyncIterator[str]:
+    async def process_stream(
+        self, question: str, mode: str, conversation_id: str | None = None,
+        subject: str | None = None, topic: str | None = None,
+        preferred_language: str | None = None, preferred_depth: str | None = None,
+        preferred_format: str | None = None,
+        language: str | None = None, depth: str | None = None, format: str | None = None,
+    ) -> AsyncIterator[str | ConversationEvent]:
 
         print(f"[orchestrator] process_stream() entry: question={question!r}, mode={mode!r}", flush=True)
         print("[stream] started", flush=True)
 
-        search_result, prompt, _sources = await self._prepare_prompt(question, mode)
+        search_result, prompt, _sources, resolved_conversation_id, classification, adaptation = await self._prepare_prompt(
+            question, mode, conversation_id, subject, topic,
+            preferred_language, preferred_depth, preferred_format,
+            language, depth, format,
+        )
+        yield ConversationEvent(
+            resolved_conversation_id, str(classification["subject"]), str(classification["topic"]),
+            str(adaptation["effective_language"]), str(adaptation["effective_depth"]), str(adaptation["effective_format"])
+        )
 
         print("[orchestrator] before LLM.generate_stream()", flush=True)
 
@@ -145,22 +260,41 @@ class AIOrchestrator:
         async for token in self.llm.generate_stream(
             prompt=prompt,
             mode=mode,
+            depth=adaptation["effective_depth"],
         ):
             if first_token:
                 print("[stream] first token", flush=True)
                 first_token = False
 
             parts.append(token)
-            yield token
 
         elapsed = time.perf_counter() - start
 
         print("[stream] finished", flush=True)
         print(f"LLM Generation Time: {elapsed:.2f} seconds", flush=True)
 
-        self.memory_manager.add_assistant_message(
-            conversation_id=self._conversation_id,
-            content="".join(parts),
+        repaired_answer = repair_mode_format("".join(parts), mode)
+
+        # Stream the repaired response only after completion so normal and
+        # streaming endpoints have identical final Markdown.
+        for line in repaired_answer.splitlines(keepends=True):
+            yield line
+
+        assistant_message = self.memory_manager.add_assistant_message(
+            conversation_id=resolved_conversation_id,
+            content=repaired_answer,
+        )
+        self.activity_manager.record_event(
+            "answer_generated", datetime.now(timezone.utc),
+            conversation_id=resolved_conversation_id,
+            subject=str(classification["subject"]),
+            topic=str(classification["topic"]),
+            metadata_json={
+                "mode": self._mode_value(mode),
+                "provider": search_result.get("provider", "local"),
+                "message_id": assistant_message.id,
+                "success": True,
+            },
         )
 
         print("[orchestrator] after LLM.generate_stream()", flush=True)

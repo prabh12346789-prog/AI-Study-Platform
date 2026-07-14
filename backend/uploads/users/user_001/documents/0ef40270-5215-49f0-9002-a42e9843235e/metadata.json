@@ -1,0 +1,13 @@
+{
+    "document_id": "0ef40270-5215-49f0-9002-a42e9843235e",
+    "original_name": "project_aurora_test.pdf",
+    "stored_name": "original.pdf",
+    "user_id": "user_001",
+    "uploaded_at": "2026-07-14T09:28:18.590993",
+    "pages": 1,
+    "word_count": 26,
+    "chunks": 1,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "vectorized": true,
+    "status": "embedded"
+}

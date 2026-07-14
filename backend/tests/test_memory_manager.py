@@ -1,4 +1,5 @@
 from src.memory.manager import MemoryManager
+import time
 
 
 def test_memory_manager_round_trip(tmp_path):
@@ -20,3 +21,26 @@ def test_memory_manager_round_trip(tmp_path):
 
     manager.delete_conversation(conversation_id=conversation.id)
     assert manager.list_conversations() == []
+
+
+def test_conversations_are_isolated_and_sorted_by_updated_at(tmp_path):
+    manager = MemoryManager(db_path=str(tmp_path / "memory.sqlite3"))
+    first = manager.create_conversation("Fundamental Rights")
+    second = manager.create_conversation("Inflation")
+    manager.add_user_message(first.id, "What is Article 32?")
+    time.sleep(0.01)
+    manager.add_user_message(second.id, "What causes inflation?")
+
+    assert [item.content for item in manager.get_messages(first.id)] == ["What is Article 32?"]
+    assert [item.content for item in manager.get_messages(second.id)] == ["What causes inflation?"]
+    assert [item.id for item in manager.list_conversations()] == [second.id, first.id]
+
+
+def test_missing_conversation_is_rejected(tmp_path):
+    manager = MemoryManager(db_path=str(tmp_path / "memory.sqlite3"))
+    try:
+        manager.add_user_message("missing", "Hello")
+    except ValueError as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("Missing conversation should be rejected")

@@ -13,9 +13,9 @@ class OllamaLLM(BaseLLM):
     def __init__(self, model_name: str):
         self.model_name = model_name
 
-    async def generate_stream(self, prompt: str, mode: str) -> AsyncIterator[str]:
+    async def generate_stream(self, prompt: str, mode: str, depth: str = "standard") -> AsyncIterator[str]:
 
-        config = get_generation_config(mode)
+        config = get_generation_config(mode, depth)
 
         print("==============================", flush=True)
         print("Generation Profile", flush=True)

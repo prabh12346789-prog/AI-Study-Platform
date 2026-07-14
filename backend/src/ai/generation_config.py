@@ -32,5 +32,10 @@ GENERATION_CONFIG = {
 }
 
 
-def get_generation_config(mode):
-    return GENERATION_CONFIG.get(mode, GENERATION_CONFIG["learn"])
+DEPTH_LIMITS = {"quick": 300, "standard": 650, "detailed": 1100}
+
+
+def get_generation_config(mode, depth="standard"):
+    config = dict(GENERATION_CONFIG.get(mode, GENERATION_CONFIG["learn"]))
+    config["num_predict"] = DEPTH_LIMITS.get(depth, DEPTH_LIMITS["standard"])
+    return config

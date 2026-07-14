@@ -21,5 +21,6 @@ class PDFParser:
 
         return {
             "text": full_text,
-            "pages": len(pages)
+            "pages": len(pages),
+            "page_texts": pages,
         }

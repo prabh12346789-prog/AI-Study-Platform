@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from src.db.base import Base
 
@@ -35,5 +35,10 @@ class ConversationMessage(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    timestamp = synonym("created_at")
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages", lazy="selectin")
+
+
+# Public domain name while preserving the existing database/model import.
+Message = ConversationMessage

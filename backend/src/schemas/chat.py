@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from src.schemas.profile import AnswerFormat, Depth, Language
+
 from src.services.orchestrator.models import ResponseMode
 
 
@@ -16,6 +18,15 @@ class ChatRequest(BaseModel):
 
     question: str
     mode: ResponseMode = ResponseMode.LEARN
+    conversation_id: str | None = None
+    subject: str | None = None
+    topic: str | None = None
+    preferred_language: Language | None = None
+    preferred_depth: Depth | None = None
+    preferred_format: AnswerFormat | None = None
+    language: Language | None = None
+    depth: Depth | None = None
+    format: AnswerFormat | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -41,3 +52,9 @@ class ChatResponse(BaseModel):
     answer: str
     provider: str
     sources: list[dict]
+    conversation_id: str | None = None
+    subject: str | None = None
+    topic: str | None = None
+    effective_language: str | None = None
+    effective_depth: str | None = None
+    effective_format: str | None = None

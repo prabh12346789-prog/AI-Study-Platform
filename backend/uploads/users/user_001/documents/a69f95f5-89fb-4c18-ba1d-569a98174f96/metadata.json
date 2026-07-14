@@ -1,0 +1,13 @@
+{
+    "document_id": "a69f95f5-89fb-4c18-ba1d-569a98174f96",
+    "original_name": "Fundamental-rights-and-Fundamental-Duties.pdf",
+    "stored_name": "original.pdf",
+    "user_id": "user_001",
+    "uploaded_at": "2026-07-14T09:32:49.949107",
+    "pages": 6,
+    "word_count": 1261,
+    "chunks": 2,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "vectorized": true,
+    "status": "embedded"
+}

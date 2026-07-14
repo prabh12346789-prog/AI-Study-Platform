@@ -1,13 +1,24 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { ProfilePanel } from './ProfilePanel'
+import { MentorDashboard } from './MentorDashboard'
+import { useActiveStudyTracker } from './useActiveStudyTracker'
 import {
   API_BASE_URL,
   checkBackend,
+  Conversation,
+  createConversation,
+  deleteConversation,
+  listConversations,
+  loadConversationMessages,
+  renameConversation,
   sendChat,
   streamChat,
   StudyMode,
   uploadPdf,
+  getProfile,
+  LearnerProfile,
 } from './api'
 
 type Role = 'user' | 'assistant'
@@ -18,6 +29,7 @@ type Message = {
   content: string
   createdAt: string
   error?: boolean
+  adaptation?: { language: string; depth: string; format: string }
 }
 
 const MODES: Array<{ value: StudyMode; label: string; hint: string }> = [
@@ -44,23 +56,74 @@ function initialAssistantMessage(): Message {
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage()])
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [activeSubject, setActiveSubject] = useState<string | null>(null)
+  const [activeTopic, setActiveTopic] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
   const [mode, setMode] = useState<StudyMode>('learn')
   const [useStreaming, setUseStreaming] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null)
   const [uploadState, setUploadState] = useState('No PDF selected')
+  const [profileDefaults, setProfileDefaults] = useState<LearnerProfile | null>(null)
+  const [adaptationError, setAdaptationError] = useState('')
+  const [messageLanguage, setMessageLanguage] = useState<LearnerProfile['preferred_language'] | null>(null)
+  const [messageDepth, setMessageDepth] = useState<LearnerProfile['preferred_depth'] | null>(null)
+  const [messageFormat, setMessageFormat] = useState<LearnerProfile['preferred_format'] | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const selectedMode = useMemo(() => MODES.find((item) => item.value === mode)!, [mode])
+  const trackingActive = useActiveStudyTracker(conversationId, activeSubject, activeTopic)
 
   useEffect(() => {
     const controller = new AbortController()
     void checkBackend(controller.signal).then(setBackendOnline)
+    void refreshConversations()
+    void getProfile().then(setProfileDefaults).catch(() => setAdaptationError('Profile defaults unavailable; safe defaults are active.'))
     return () => controller.abort()
   }, [])
+
+  async function refreshConversations() {
+    setConversations(await listConversations())
+  }
+
+  async function newChat() {
+    const conversation = await createConversation()
+    setConversationId(conversation.id)
+    setActiveSubject(null)
+    setActiveTopic(null)
+    setMessages([initialAssistantMessage()])
+    await refreshConversations()
+  }
+
+  async function selectConversation(id: string) {
+    const stored = await loadConversationMessages(id)
+    setConversationId(id)
+    setActiveSubject(null)
+    setActiveTopic(null)
+    setMessages(stored.map((message) => ({
+      id: String(message.id), role: message.role, content: message.content, createdAt: message.timestamp,
+    })))
+  }
+
+  async function renameChat(conversation: Conversation) {
+    const title = window.prompt('Conversation title', conversation.title)?.trim()
+    if (!title) return
+    await renameConversation(conversation.id, title)
+    await refreshConversations()
+  }
+
+  async function removeChat(id: string) {
+    await deleteConversation(id)
+    if (conversationId === id) {
+      setConversationId(null)
+      setMessages([initialAssistantMessage()])
+    }
+    await refreshConversations()
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -72,6 +135,11 @@ export default function App() {
         message.id === messageId ? { ...message, content: updater(message.content), error: false } : message,
       ),
     )
+  }
+
+  function setAssistantAdaptation(messageId: string, language?: string, depth?: string, format?: string) {
+    if (!language || !depth || !format) return
+    setMessages(current => current.map(message => message.id === messageId ? { ...message, adaptation: { language, depth, format } } : message))
   }
 
   async function submitQuestion(event?: FormEvent) {
@@ -100,13 +168,29 @@ export default function App() {
     abortRef.current = controller
 
     try {
-      const payload = { question: trimmed, mode }
+      const payload = {
+        question: trimmed, mode, ...(conversationId ? { conversation_id: conversationId } : {}),
+        ...(messageLanguage ? { language: messageLanguage } : {}),
+        ...(messageDepth ? { depth: messageDepth } : {}),
+        ...(messageFormat ? { format: messageFormat } : {}),
+      }
       if (useStreaming) {
-        await streamChat(payload, (token) => updateAssistant(assistantId, (current) => current + token), controller.signal)
+        await streamChat(payload, (token) => updateAssistant(assistantId, (current) => current + token),
+          (id, subject, topic, language, depth, format) => {
+            setConversationId(id)
+            setActiveSubject(subject ?? null)
+            setActiveTopic(topic ?? null)
+            setAssistantAdaptation(assistantId, language, depth, format)
+          }, controller.signal)
       } else {
         const response = await sendChat(payload, controller.signal)
+        setConversationId(response.conversation_id)
+        setActiveSubject(response.subject ?? null)
+        setActiveTopic(response.topic ?? null)
+        setAssistantAdaptation(assistantId, response.effective_language, response.effective_depth, response.effective_format)
         updateAssistant(assistantId, () => response.answer)
       }
+      await refreshConversations()
     } catch (error) {
       if (controller.signal.aborted) {
         updateAssistant(assistantId, (current) => current || 'Generation stopped.')
@@ -162,9 +246,22 @@ export default function App() {
           </div>
         </div>
 
-        <button className="new-chat" onClick={() => setMessages([initialAssistantMessage()])}>
+        <button className="new-chat" onClick={() => void newChat()}>
           <span>＋</span> New test chat
         </button>
+
+        <section className="side-section">
+          <p className="eyebrow">Conversations</p>
+          {conversations.map((conversation) => (
+            <div className={`status-card conversation-item ${conversation.id === conversationId ? 'active' : ''}`} key={conversation.id}>
+              <button className="secondary-button" aria-pressed={conversation.id === conversationId} onClick={() => void selectConversation(conversation.id)}>
+                {conversation.title}
+              </button>
+              <button className="icon-button" aria-label={`Rename ${conversation.title}`} title="Rename" onClick={() => void renameChat(conversation)}>Edit</button>
+              <button className="icon-button danger-button" aria-label={`Delete ${conversation.title}`} title="Delete" onClick={() => void removeChat(conversation.id)}>Delete</button>
+            </div>
+          ))}
+        </section>
 
         <section className="side-section">
           <p className="eyebrow">Backend</p>
@@ -179,7 +276,7 @@ export default function App() {
 
         <section className="side-section">
           <p className="eyebrow">Current request contract</p>
-          <pre className="contract">{`POST /chat/stream\n{\n  "question": "...",\n  "mode": "${mode}"\n}`}</pre>
+          <pre className="contract">{`POST /chat/stream\n{\n  "question": "...",\n  "mode": "${mode}",\n  "conversation_id": "${conversationId ?? '...'}"\n}`}</pre>
         </section>
 
         <section className="side-section pdf-section">
@@ -198,8 +295,7 @@ export default function App() {
         </section>
 
         <div className="sidebar-footer">
-          <span>Local browser chat only</span>
-          <span>Backend memory IDs come later</span>
+          <span>Conversation memory synchronized</span>
         </div>
       </aside>
 
@@ -236,6 +332,9 @@ export default function App() {
           <span>Model settings are selected by the backend generation profile.</span>
         </div>
 
+        <MentorDashboard trackingActive={trackingActive} />
+        <ProfilePanel />
+
         <section className="message-list" aria-live="polite">
           {messages.map((message) => (
             <article key={message.id} className={`message-row ${message.role}`}>
@@ -254,6 +353,7 @@ export default function App() {
                     <span /> <span /> <span />
                   </div>
                 )}
+                {message.adaptation && <small className="adaptation-label">{message.adaptation.language} · {message.adaptation.depth} · {message.adaptation.format}</small>}
               </div>
             </article>
           ))}
@@ -261,6 +361,13 @@ export default function App() {
         </section>
 
         <form className="composer" onSubmit={(event) => void submitQuestion(event)}>
+          <div className="adaptation-controls" title="Message settings override your saved profile for this message only.">
+            <label>Language<select aria-label="Response language" disabled={isGenerating || !profileDefaults} value={messageLanguage ?? profileDefaults?.preferred_language ?? 'auto'} onChange={event => setMessageLanguage(event.target.value as LearnerProfile['preferred_language'])}><option value="auto">Auto</option><option value="english">English</option><option value="hindi">Hindi</option><option value="punjabi">Punjabi</option></select></label>
+            <label>Depth<select aria-label="Answer depth" disabled={isGenerating || !profileDefaults} value={messageDepth ?? profileDefaults?.preferred_depth ?? 'standard'} onChange={event => setMessageDepth(event.target.value as LearnerProfile['preferred_depth'])}><option value="quick">Quick</option><option value="standard">Standard</option><option value="detailed">Detailed</option></select></label>
+            <label>Format<select aria-label="Answer format" disabled={isGenerating || !profileDefaults} value={messageFormat ?? profileDefaults?.preferred_format ?? 'mixed'} onChange={event => setMessageFormat(event.target.value as LearnerProfile['preferred_format'])}><option value="bullets">Bullets</option><option value="structured">Structured</option><option value="explanation">Explanation</option><option value="mixed">Mixed</option></select></label>
+            <button type="button" className="icon-button" disabled={isGenerating} onClick={() => { setMessageLanguage(null); setMessageDepth(null); setMessageFormat(null) }}>Use profile defaults</button>
+            <small>{profileDefaults ? messageLanguage || messageDepth || messageFormat ? 'One-message override' : 'Saved profile settings' : 'Loading profile defaults…'}{adaptationError && ` · ${adaptationError}`}</small>
+          </div>
           <div className="composer-toolbar">
             <button type="button" className="icon-button" onClick={() => fileRef.current?.click()} title="Upload PDF">
               Attach PDF

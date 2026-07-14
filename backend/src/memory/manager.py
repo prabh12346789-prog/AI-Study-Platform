@@ -4,6 +4,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,9 +36,31 @@ class MemoryManager:
             session.refresh(conversation)
             return conversation
 
+    def get_conversation(self, conversation_id: str) -> Conversation | None:
+        with self._session() as session:
+            return session.get(Conversation, conversation_id)
+
+    def conversation_exists(self, conversation_id: str) -> bool:
+        return self.get_conversation(conversation_id) is not None
+
+    def get_messages(self, conversation_id: str) -> list[ConversationMessage]:
+        with self._session() as session:
+            return list(session.execute(
+                select(ConversationMessage)
+                .where(ConversationMessage.conversation_id == conversation_id)
+                .order_by(ConversationMessage.created_at, ConversationMessage.id)
+            ).scalars().all())
+
+    def _touch(self, session: Session, conversation_id: str) -> None:
+        conversation = session.get(Conversation, conversation_id)
+        if conversation is None:
+            raise ValueError(f"Conversation '{conversation_id}' not found")
+        conversation.updated_at = datetime.now(timezone.utc)
+
     def add_user_message(self, conversation_id: str, content: str) -> ConversationMessage:
         message = ConversationMessage(conversation_id=conversation_id, role="user", content=content)
         with self._session() as session:
+            self._touch(session, conversation_id)
             session.add(message)
             session.commit()
             session.refresh(message)
@@ -45,6 +69,7 @@ class MemoryManager:
     def add_assistant_message(self, conversation_id: str, content: str) -> ConversationMessage:
         message = ConversationMessage(conversation_id=conversation_id, role="assistant", content=content)
         with self._session() as session:
+            self._touch(session, conversation_id)
             session.add(message)
             session.commit()
             session.refresh(message)
@@ -67,12 +92,14 @@ class MemoryManager:
                 for message in sorted(messages, key=lambda item: item.created_at)
             ]
 
-    def delete_conversation(self, conversation_id: str) -> None:
+    def delete_conversation(self, conversation_id: str) -> bool:
         with self._session() as session:
             conversation = session.get(Conversation, conversation_id)
             if conversation is not None:
                 session.delete(conversation)
                 session.commit()
+                return True
+            return False
 
     def list_conversations(self) -> list[ConversationSummary]:
         with self._session() as session:

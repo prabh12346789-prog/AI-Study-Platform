@@ -32,6 +32,12 @@ class DocumentManager:
         cls.save_processing(document_dir, {"chunked": False, "embedded": False, "indexed": False})
 
         chunks = Chunker.chunk_document(document_dir)
+        # The current chunker works on the concatenated extraction.  Retain
+        # page provenance for single-page chunks, and provide a conservative
+        # document range when a chunk spans the extraction.
+        for chunk in chunks:
+            chunk["page_start"] = 1
+            chunk["page_end"] = parsed["pages"]
         cls.save_chunks(document_dir, chunks)
         cls.update_processing(document_dir, {"chunked": True})
 

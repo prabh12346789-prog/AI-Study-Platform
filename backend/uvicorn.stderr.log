@@ -1,0 +1,339 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\Guest1\\AI-Study-Platform\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [10556] using WatchFiles
+INFO:     Started server process [25636]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 4083.80it/s]
+WARNING:  WatchFiles detected changes in 'src\api\routes\chat.py', 'src\rag\manager.py', 'src\rag\parser.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [25636]
+INFO:     Started server process [30056]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 4769.33it/s]
+WARNING:  WatchFiles detected changes in 'src\services\orchestrator\format_repair.py', 'tests\test_format_repair.py', 'src\services\orchestrator\service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [30056]
+WARNING:  WatchFiles detected changes in 'src\services\orchestrator\format_repair.py'. Reloading...
+INFO:     Started server process [14868]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14868]
+INFO:     Started server process [25020]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 5634.31it/s]
+WARNING:  WatchFiles detected changes in 'src\schemas\chat.py', 'src\memory\manager.py', 'src\api\router.py', 'src\schemas\conversation.py', 'src\api\routes\conversations.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [25020]
+WARNING:  WatchFiles detected changes in 'tests\test_memory_manager.py', 'src\services\orchestrator\service.py', 'src\memory\models.py', 'tests\test_conversation_api.py', 'src\api\routes\chat.py', 'tests\test_conversation_orchestrator.py'. Reloading...
+INFO:     Started server process [24696]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [24696]
+INFO:     Started server process [24636]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_activity_api.py', 'src\api\routes\activity.py', 'src\api\router.py', 'src\activity\__init__.py', 'src\activity\manager.py', 'src\schemas\activity.py', 'src\activity\models.py', 'tests\test_activity_event_store.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [24636]
+WARNING:  WatchFiles detected changes in 'tests\test_conversation_orchestrator.py'. Reloading...
+INFO:     Started server process [19516]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 78, in serve
+    await self._serve(sockets)
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 93, in _serve
+    await self.startup(sockets=sockets)
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 104, in startup
+    await self.lifespan.startup()
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 56, in startup
+    await self.startup_event.wait()
+  File "C:\Python314\Lib\asyncio\locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyncio\runners.py", line 132, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\starlette\routing.py", line 645, in lifespan
+    await receive()
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [11996]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\activity\__init__.py', 'src\activity\manager.py', 'src\activity\models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11996]
+WARNING:  WatchFiles detected changes in 'src\schemas\activity.py', 'src\api\routes\activity.py'. Reloading...
+INFO:     Started server process [7928]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7928]
+INFO:     Started server process [1988]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\api\routes\pdf.py', 'src\services\orchestrator\service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1988]
+WARNING:  WatchFiles detected changes in 'tests\test_activity_api.py', 'tests\test_pdf_activity.py', 'tests\test_activity_event_store.py', 'tests\test_conversation_orchestrator.py'. Reloading...
+INFO:     Started server process [27260]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\schemas\chat.py', 'src\activity\taxonomy.py', 'src\activity\manager.py', 'src\schemas\activity.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [27260]
+WARNING:  WatchFiles detected changes in 'src\api\routes\chat.py', 'src\activity\manager.py', 'src\api\routes\activity.py', 'src\services\orchestrator\service.py'. Reloading...
+INFO:     Started server process [21256]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [21256]
+WARNING:  WatchFiles detected changes in 'tests\test_activity_taxonomy.py', 'tests\test_activity_event_store.py', 'tests\test_conversation_orchestrator.py'. Reloading...
+INFO:     Started server process [440]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 78, in serve
+    await self._serve(sockets)
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 93, in _serve
+    await self.startup(sockets=sockets)
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 104, in startup
+    await self.lifespan.startup()
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 56, in startup
+    await self.startup_event.wait()
+  File "C:\Python314\Lib\asyncio\locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyncio\runners.py", line 132, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\starlette\routing.py", line 645, in lifespan
+    await receive()
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [11568]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\activity\manager.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11568]
+INFO:     Started server process [30168]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 5165.62it/s]
+WARNING:  WatchFiles detected changes in 'src\api\routes\profile.py', 'src\api\router.py', 'src\profile\__init__.py', 'src\profile\models.py', 'src\schemas\profile.py', 'src\profile\manager.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [30168]
+WARNING:  WatchFiles detected changes in 'src\services\orchestrator\service.py', 'tests\test_profile_manager.py', 'tests\test_profile_api.py', 'src\schemas\chat.py', 'src\api\routes\chat.py', 'src\profile\manager.py', 'tests\test_conversation_orchestrator.py'. Reloading...
+INFO:     Started server process [26572]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 78, in serve
+    await self._serve(sockets)
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 93, in _serve
+    await self.startup(sockets=sockets)
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\server.py", line 104, in startup
+    await self.lifespan.startup()
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 56, in startup
+    await self.startup_event.wait()
+  File "C:\Python314\Lib\asyncio\locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python314\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python314\Lib\asyncio\runners.py", line 132, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\starlette\routing.py", line 645, in lifespan
+    await receive()
+  File "C:\Users\Guest1\AI-Study-Platform\backend\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [16364]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 4898.31it/s]
+WARNING:  WatchFiles detected changes in 'src\mastery\manager.py', 'src\mastery\models.py', 'src\mastery\__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16364]
+WARNING:  WatchFiles detected changes in 'src\api\router.py', 'src\api\routes\mastery.py', 'tests\test_mastery_manager.py', 'src\mastery\manager.py', 'src\schemas\mastery.py', 'src\api\routes\activity.py', 'tests\test_mastery_api.py'. Reloading...
+INFO:     Started server process [11380]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11380]
+INFO:     Started server process [28956]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\mastery\manager.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28956]
+INFO:     Started server process [17640]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\mentor\models.py', 'src\mentor\manager.py', 'src\mentor\__init__.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [17640]
+INFO:     Started server process [29828]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\api\router.py', 'src\api\routes\mentor.py', 'src\schemas\mentor.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29828]
+WARNING:  WatchFiles detected changes in 'tests\test_mentor_engine.py', 'src\mentor\manager.py'. Reloading...
+INFO:     Started server process [10128]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10128]
+INFO:     Started server process [22540]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'src\api\routes\mentor.py', 'src\mentor\dashboard.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [22540]
+WARNING:  WatchFiles detected changes in 'src\mentor\dashboard.py', 'tests\test_mentor_dashboard.py'. Reloading...
+INFO:     Started server process [8788]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8788]
+INFO:     Started server process [12476]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 5982.67it/s]
+WARNING:  WatchFiles detected changes in 'src\services\adaptation.py', 'src\ai\generation_config.py', 'src\schemas\chat.py', 'src\ai\providers\dummy.py', 'src\ai\base.py', 'src\ai\providers\ollama.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [12476]
+WARNING:  WatchFiles detected changes in 'tests\test_adaptation.py', 'src\services\orchestrator\service.py', 'src\api\routes\chat.py', 'tests\test_conversation_orchestrator.py'. Reloading...
+INFO:     Started server process [6400]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6400]
+INFO:     Started server process [8140]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 2472.06it/s]

@@ -38,7 +38,6 @@ Supported modes: `learn`, `revision`, `prelims`, `mains`, and `interview`.
 - Track only consented activity inside the study platform. Do not monitor unrelated device or browser activity.
 - Do not make medical or psychological diagnoses.
 - Manual user preferences always override automatic inference.
-- Community popularity must not change mastery scores.
 - Video recommendations must use trusted sources and links only.
 - Every recommendation must include a human-readable reason.
 - Implement every feature as a small, testable milestone.
@@ -71,7 +70,6 @@ Development priority:
 8. Actionable Mentor Intelligence dashboard
 9. Language and content-depth adaptation
 10. Video recommendations
-11. Community MVP
 
 ## Testing and reporting
 

@@ -6,21 +6,21 @@ function duration(seconds: number) {
   return `${Math.floor(seconds / 60)}m`
 }
 
-export function ActivityOverview({ trackingActive }: { trackingActive: boolean }) {
+export function ActivityOverview({ trackingActive, period = 'today' }: { trackingActive: boolean; period?: 'today' | '7d' }) {
   const [summary, setSummary] = useState<ActivitySummary | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const refresh = useCallback(async () => {
     setLoading(true); setError('')
-    try { setSummary(await getActivitySummary()) }
+    try { setSummary(await getActivitySummary(period)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to load activity.') }
     finally { setLoading(false) }
-  }, [])
+  }, [period])
   useEffect(() => { void refresh() }, [refresh])
 
   return <section className="activity-overview">
     <div className="activity-heading">
-      <div><p className="eyebrow">Activity overview</p><strong>Today</strong></div>
+      <div><p className="eyebrow">Activity overview</p><strong>{period === '7d' ? 'Last seven days' : 'Today'}</strong></div>
       <div className="activity-actions"><span className={trackingActive ? 'tracking active' : 'tracking'}>
         {trackingActive ? 'Tracking active study' : 'Tracking paused'}
       </span><button className="icon-button" onClick={() => void refresh()}>Refresh</button></div>

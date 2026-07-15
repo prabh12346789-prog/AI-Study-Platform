@@ -32,14 +32,10 @@ Build actionable Mentor Intelligence views rather than a marks-only dashboard.
 
 Adapt explanations to learner preferences and state. Recommend videos only from trusted sources with valid links and reasons.
 
-## M8 — Community MVP
-
-Add community features without allowing popularity to affect mastery scores.
-
-## M9 — Current affairs, quiz, notes, and planner
+## M8 — Current affairs, quiz, notes, and planner
 
 Integrate supporting study workflows with the mentor and learner state.
 
-## M10 — Production hardening
+## M9 — Production hardening
 
 Security, authentication, migrations, observability, performance, accessibility, deployment, and comprehensive regression coverage.

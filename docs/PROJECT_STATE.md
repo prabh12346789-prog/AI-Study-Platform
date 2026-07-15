@@ -12,8 +12,11 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 - SQLite/SQLAlchemy conversation and message persistence.
 - React/TypeScript/Vite test frontend.
 - A shared `MemoryManager` boundary isolates persistence from orchestration.
+- Community is removed from the active MVP: its API router, frontend view, activity creation types, demo fixtures, and tests are absent. Older SQLite Community tables are deliberately left untouched for a future controlled migration, and historical activity rows remain readable.
 
 ## Completed features
+
+- The frontend now uses a premium dark navy application shell with a fixed desktop sidebar, compact sticky header, local feature-navigation search, Lucide icons, responsive drawer navigation, and real routes for Dashboard, AI Study Coach, My Library, Current Affairs, Visual Learning, Revision Center, Quizzes, Progress, Profile, and Settings. The mentor dashboard keeps real API data above the fold, while existing chat streaming, PDF upload, Current Affairs, roadmap quizzes, mastery, retention, mentor actions, video recommendations, activity, and profile integrations remain unchanged.
 
 - Normal and streaming chat across learn, revision, prelims, mains, and interview modes.
 - PDF upload and RAG foundations.
@@ -68,12 +71,9 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 - Read-only video listing, detail, and recommendation APIs are joined by explicit open/dismiss actions; opening records `video_opened` without changing mastery, while mentor `watch_video` actions require an exact trusted match and remain below urgent revision.
 - The responsive frontend adds verified video cards to Mentor Intelligence and explicit video requests in chat, with filters, reasons, loading/error/empty/link states, Watch, Save, dismiss, and post-video quiz guidance; targeted tests and the production build pass.
 - Backend cold start is HTTP-ready independently of Ollama, embeddings, and Chroma: heavy retrieval/provider construction is deferred to first chat/PDF use, staged startup logs identify settings/router/database readiness, and non-blocking `GET /health` reports component state. Validation reached application-ready in 1.80 seconds.
-- Community MVP adds eleven seeded UPSC study groups, posts, comments, saved posts, and reports with owner-only mutation, soft deletion, pagination/filtering, generic display names, public-PII and repeated-spam rejection, source URL validation, and hidden-content exclusion.
-- Community create/comment/save/report activity is recorded but never converted to mastery evidence or forgetting-risk input. The responsive Community page includes navigation, group and saved filters, a finite search/sort feed, post composer, source-domain labels, discussion detail, comments, ownership controls, reporting, and safety guidelines.
-- Sixteen targeted community, activity, and mastery tests pass; the frontend production build passes.
 - End-to-end stabilization passes 41 connected journey tests followed by the full 65-test backend regression and frontend production build. The only failure found was an order-dependent health test, corrected to verify that health reporting observes—but never initializes—shared embedding/vector state.
 - Chat SSE now emits conversation/settings metadata before retrieval, forwards each Ollama delta as a named token event, ends with a non-visible done event, and persists the assistant response once only after successful completion. The frontend parses split SSE event blocks incrementally and batches visible deltas for 45 ms, with preparation/retrieval/generation status text and reader-safe scrolling. Live Ollama validation produced 181 cold and 196 warm chunks; first-token time measured 18.41 seconds cold and 2.27 seconds warm.
-- A development-only, idempotent demo fixture at `backend/scripts/seed_demo.py` creates `backend/data/demo.sqlite3` with a strong topic, weak/high-risk evidence, completed revision, quiz mistakes, mentor action, trusted video match, and two community posts; production startup never invokes it.
+- A development-only, idempotent demo fixture at `backend/scripts/seed_demo.py` creates `backend/data/demo.sqlite3` with a strong topic, weak/high-risk evidence, completed revision, quiz mistakes, mentor action, and trusted video match; production startup never invokes it.
 - Visual Learning Mode creates source-grounded timeline, flowchart, concept-map, comparison, process, and cause-and-effect roadmaps from retrieved study material through the existing local Ollama and RAG boundaries.
 - `VisualRoadmap` persists ownership, optional conversation linkage, classification, type/language/status, validated structure, source metadata, and generated-file paths. SVG, JSON, source, and animation-ready metadata files remain outside SQLite under `backend/generated/users/<user>/roadmaps/<id>/`.
 - A strict Pydantic schema limits output to twelve concise nodes, unique IDs, valid connections, and retrieved source IDs. Insufficient context fails clearly; one JSON-only repair attempt may fix structure without a second factual pass.
@@ -97,6 +97,10 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 - Daily briefs deterministically aggregate accepted summaries into ranked stories, subject groups, Prelims facts, and Mains themes without another model call. Open/save/brief activity never creates mastery evidence.
 - The responsive Current Affairs page provides real date/search/subject/importance filtering, daily briefs, subject-grouped cards, details, save and safe source actions, plus loading/empty/error states. Mentor Dashboard adds a compact unread/top-subject/saved/brief-status card.
 - Forty-two targeted current-affairs, grounding/RAG, activity, mastery, mentor, chat, and roadmap tests pass; the frontend production build passes. Current-affairs quizzes, notifications, payments, and advanced institutional analytics are not implemented.
+- Current Affairs live discovery now validates the configured provider, uses reachable Bing RSS discovery, logs query/domain/redirect/extraction counters, explains zero-result causes, supports repeatable CLI query overrides and allowlisted direct URLs, and generates five date-aware UPSC query categories. Live validation returned 10 raw results, 5 approved RBI extractions, and reached local summarization; 24 focused Current Affairs and grounding tests pass.
+- Current Affairs article selection now rejects homepage/index URLs before Ollama, scores clean body length, title, publication date, paragraph count, duplicate boilerplate, and navigation ratio, ranks article-shaped results first, and parses optional summary fields resiliently without weakening factual grounding. Live direct validation accepted RBI press release `prid=60774` and generated its daily brief; 23 focused Current Affairs tests pass.
+- Current Affairs Quiz and Retention Tracking adds deterministic daily, weekly, and custom quizzes generated only from persisted accepted article summaries, Prelims facts, Mains relevance, metadata, and citations. Idempotent submission creates per-question mastery evidence, article retention/risk/revision schedules, activity events, weak-topic/source feedback, mentor Current Affairs actions, a complete quiz/retention interface, and dashboard status. Thirty-nine focused Current Affairs, mastery, and mentor tests and the frontend production build pass.
+- Final MVP hardening completes the idempotent demo learner with onboarding, two isolated conversations, PDF fixture/activity, mastery/risk states, mentor/video matches, roadmap and quiz result, and accepted Current Affairs/brief/quiz/high-risk retention. Measured application readiness was 1.37 seconds, cold/warm first chat token 16.86/1.13 seconds, dashboard 32.9 ms, and Current Affairs APIs about 30 ms.
 
 ## Partially completed features
 
@@ -113,11 +117,11 @@ No automated backend or build blocker. Final interactive browser clicking and co
 
 ## Current task
 
-Current Affairs Phase 1 — completed and tested.
+Final MVP hardening and demo readiness — completed and tested.
 
 ## Exact next task
 
-No next feature is selected. Current-affairs quizzes, scheduling/notifications, and roadmap animation remain future work and must begin only when requested.
+No next feature is selected. Scheduling/notifications and roadmap animation remain future work and must begin only when requested.
 
 ## Relevant endpoints
 
@@ -161,21 +165,6 @@ No next feature is selected. Current-affairs quizzes, scheduling/notifications, 
 - `GET /videos/recommendations`
 - `POST /videos/{video_id}/open`
 - `POST /videos/{video_id}/dismiss`
-- `GET /community/groups`
-- `GET /community/groups/{group_id}`
-- `GET /community/posts`
-- `POST /community/posts`
-- `GET /community/posts/{post_id}`
-- `PATCH /community/posts/{post_id}`
-- `DELETE /community/posts/{post_id}`
-- `GET /community/posts/{post_id}/comments`
-- `POST /community/posts/{post_id}/comments`
-- `PATCH /community/comments/{comment_id}`
-- `DELETE /community/comments/{comment_id}`
-- `POST /community/posts/{post_id}/save`
-- `DELETE /community/posts/{post_id}/save`
-- `GET /community/saved`
-- `POST /community/reports`
 - `POST /visual-roadmaps`
 - `GET /visual-roadmaps`
 - `GET /visual-roadmaps/{id}`
@@ -203,13 +192,12 @@ No next feature is selected. Current-affairs quizzes, scheduling/notifications, 
 - Mastery and forgetting risk are transparent heuristic estimates, not scientifically precise measurements.
 - Evidence support is foundational; richer quiz and answer-scoring producers remain future integrations.
 - Recommendation priorities are transparent heuristics, not scientific or psychological judgments.
-- Actions are limited to revision, quizzes, explanations, recall, Mains practice, and trusted videos; no community or advanced planning recommendations are included.
+- Actions are limited to revision, quizzes, explanations, recall, Mains practice, and trusted videos; advanced planning recommendations are not included.
 - Dashboard visualizations intentionally use lightweight CSS bars rather than advanced charting.
 - Romanized Hindi or Punjabi is intentionally treated as ambiguous and uses the saved preference or English fallback.
 - Word ranges and response formats are prompt guidance, not strict truncation or deterministic repair.
 - The video catalog is deliberately small and manually curated; links are not scraped, downloaded, or automatically freshness-checked.
 - No translation API, second LLM call, or current-affairs work is included.
-- Community has no private messaging, live or voice rooms, advanced moderation dashboard, AI summaries/translation, educator verification, rankings, followers, or reputation system.
 - Visual roadmaps require relevant indexed material and produce SVG only. Recall quizzes are intentionally limited to saved roadmap content; short-recall question generation is reserved by the schema but not prioritized in the current deterministic generator. Animation is not implemented.
 - Presentation is prompt-guided rather than deterministically repaired. The local 3B model can still miss part of a mixed-format contract or state inaccurate facts when no relevant retrieved material is available; high-stakes factual answers require grounded sources and review.
 - Trusted web extraction is deliberately lightweight and allowlist-based. It does not execute JavaScript, bypass access controls, or guarantee coverage of every official site; pages that cannot provide clean relevant text are rejected.
@@ -240,4 +228,18 @@ cd C:\Users\Guest1\AI-Study-Platform\upsc-ai-test-frontend-flat
 npm run dev
 ```
 
-Open the shown Vite URL, confirm `/health`, review Mentor Intelligence and profile settings, create two isolated conversations, upload a small PDF and ask a grounded question, exercise recommendation/video actions, then open Community to create, comment, save, and report a discussion. Confirm the sticky composer and scroll-to-latest control by scrolling away from a streaming answer.
+Open the shown Vite URL, then use this concise demo checklist:
+
+1. Open Mentor Dashboard.
+2. Ask a UPSC question.
+3. Show streaming and adaptive format.
+4. Upload a PDF and show its citation.
+5. Show mastery update from a quiz.
+6. Show the next-best action.
+7. Generate a roadmap from indexed material.
+8. Take the roadmap quiz.
+9. Show the Current Affairs brief.
+10. Take the Current Affairs quiz.
+11. Show the retention recommendation.
+
+Also confirm the sticky composer is visible only in Chat, Scroll to Latest appears after scrolling away from a streaming answer, and the principal pages remain usable at laptop and desktop widths.

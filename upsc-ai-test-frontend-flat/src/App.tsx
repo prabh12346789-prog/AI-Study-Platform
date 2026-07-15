@@ -1,13 +1,13 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ProfilePanel } from './ProfilePanel'
 import { MentorDashboard } from './MentorDashboard'
 import { VideoRecommendations } from './VideoRecommendations'
-import { CommunityPage } from './CommunityPage'
 import { VisualLearningPage } from './VisualLearningPage'
 import { CurrentAffairsPage } from './CurrentAffairsPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
+import { AppPage, AppShell } from './AppShell'
+import { LibraryPage, ProfilePage, ProgressPage, QuizzesPage, RevisionPage } from './StudyHubPages'
 import {
   API_BASE_URL,
   checkBackend,
@@ -60,7 +60,7 @@ function initialAssistantMessage(): Message {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'dashboard' | 'chat' | 'community' | 'visual' | 'current_affairs'>('dashboard')
+  const [page, setPage] = useState<AppPage>('dashboard')
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage()])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -296,20 +296,10 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-row">
-          <div className="brand-mark">U</div>
-          <div>
-            <strong>UPSC AI</strong>
-            <span>Test workspace</span>
-          </div>
-        </div>
-
-        <button className="new-chat" onClick={() => void newChat()}>
+    <AppShell page={page} onNavigate={setPage} onNewChat={() => void newChat()} workspaceRef={workspaceRef} onScroll={handleWorkspaceScroll} sidebarContent={<>
+        <button className="legacy-new-chat" hidden onClick={() => void newChat()}>
           <span>＋</span> New test chat
         </button>
-        <nav className="app-navigation" aria-label="Main navigation"><button className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}>Dashboard</button><button className={page === 'chat' ? 'active' : ''} onClick={() => setPage('chat')}>Chat</button><button className={page === 'current_affairs' ? 'active' : ''} onClick={() => setPage('current_affairs')}>Current Affairs</button><button className={page === 'visual' ? 'active' : ''} onClick={() => setPage('visual')}>Visual Learning</button><button className={page === 'community' ? 'active' : ''} onClick={() => setPage('community')}>Community</button></nav>
 
         <section className="side-section">
           <p className="eyebrow">Conversations</p>
@@ -355,19 +345,18 @@ export default function App() {
           <small className="upload-state">{uploadState}</small>
         </section>
 
-        <div className="sidebar-footer">
-          <span>Conversation memory synchronized</span>
-        </div>
-      </aside>
-
-      <section className={`workspace ${page}`} ref={workspaceRef} onScroll={handleWorkspaceScroll}>
-        {page === 'community' && <CommunityPage />}
+      </>}>
         {page === 'visual' && <VisualLearningPage onAsk={askFromRoadmap} />}
         {page === 'current_affairs' && <CurrentAffairsPage />}
+        {page === 'library' && <LibraryPage onUpload={() => fileRef.current?.click()} uploadState={uploadState} />}
+        {page === 'revision' && <RevisionPage trackingActive={trackingActive} />}
+        {page === 'quizzes' && <QuizzesPage onNavigate={setPage} />}
+        {page === 'progress' && <ProgressPage trackingActive={trackingActive} />}
+        {page === 'profile' && <ProfilePage />}
+        {page === 'settings' && <ProfilePage settings />}
         {page === 'dashboard' && <div className="dashboard-page">
           <header className="topbar dashboard-topbar"><div><p className="eyebrow">Mentor overview</p><h1>Your study dashboard</h1><small>Progress, next actions, revision risk, and learning preferences.</small></div><button className="send-button" onClick={() => setPage('chat')}>Open Chat</button></header>
-          <MentorDashboard trackingActive={trackingActive} />
-          <ProfilePanel />
+          <MentorDashboard trackingActive={trackingActive} onNavigate={setPage} />
         </div>}
         {page === 'chat' && <div className="chat-page">
         <header className="topbar">
@@ -402,7 +391,7 @@ export default function App() {
           <span>Model settings are selected by the backend generation profile.</span>
         </div>
 
-        <section className="message-list chat-messages" aria-live="polite">
+        <div className="chat-body"><section className="message-list chat-messages" aria-live="polite">
           {messages.map((message) => (
             <article key={message.id} className={`message-row ${message.role}`}>
               <div className="avatar">{message.role === 'user' ? 'You' : 'AI'}</div>
@@ -426,7 +415,7 @@ export default function App() {
             </article>
           ))}
           <div ref={bottomRef} />
-        </section>
+        </section><aside className="coach-rail"><p className="eyebrow">Study context</p><h3>{activeTopic ?? activeSubject ?? 'Choose a UPSC topic'}</h3><p>Use a connected workspace action without interrupting this conversation.</p><button onClick={() => setPage('visual')}>Generate Roadmap</button><button onClick={() => setPage('current_affairs')}>Open Current Affairs</button><button onClick={() => setPage('revision')}>Quick Revision</button><button onClick={() => setPage('progress')}>View Mastery</button><small>Suggested: Explain the constitutional significance, compare viewpoints, or create prelims facts.</small></aside></div>
 
         {videoRequested && <VideoRecommendations subject={activeSubject} topic={activeTopic} explicitRequest />}
 
@@ -470,7 +459,6 @@ export default function App() {
           </div>
         </form></div>
         </div>}
-      </section>
-    </main>
+    </AppShell>
   )
 }

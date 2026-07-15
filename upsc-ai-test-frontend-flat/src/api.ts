@@ -1,3 +1,5 @@
+import { createCachedOptionalLoader } from './cachedOptionalLoader'
+
 export type StudyMode = 'learn' | 'revision' | 'prelims' | 'mains' | 'interview'
 
 export interface ChatRequest {
@@ -91,9 +93,6 @@ export interface VideoRecommendation { video: VideoResource; reasons: string[] }
 
 export interface Conversation { id: string; title: string; created_at: string; updated_at: string }
 export interface ConversationMessage { id: number; conversation_id: string; role: 'user' | 'assistant'; content: string; timestamp: string }
-export interface CommunityGroup { id: string; name: string; slug: string; description: string; subject: string }
-export interface CommunityPost { id: string; user_id: string; group_id: string; group_name: string; subject: string; title: string; content: string; language: string; source_url: string | null; display_name: string; comment_count: number; saved: boolean; created_at: string }
-export interface CommunityComment { id: string; user_id: string; post_id: string; content: string; created_at: string }
 export type VisualType = 'timeline' | 'flowchart' | 'concept_map' | 'comparison' | 'process' | 'cause_effect'
 export interface RoadmapSource { id: string; source_type: 'pdf' | 'web'; document: string | null; title: string | null; url: string | null; publisher: string | null; domain: string | null; retrieved_at: string | null; source_category: string | null; trust_level: string | null; page_start: number | null; page_end: number | null; chunk_id: string | null }
 export interface VisualRoadmap { id: string; status: string; title: string; subject: string; topic: string; visual_type: VisualType; language: string; conversation_id: string | null; svg_url: string; created_at: string; updated_at: string; sources: RoadmapSource[]; structure: { title: string; summary: string; visual_type: VisualType; nodes: Array<{ id: string; label: string; description: string; source_ids: string[] }>; connections: Array<{ from: string; to: string; label: string }>; exam_points: string[]; sources: RoadmapSource[] } }
@@ -103,7 +102,12 @@ export interface RoadmapQuizResult { score: number; total: number; percentage: n
 export interface QuizAnswerResult { question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; source_node_ids: string[] }
 export interface CurrentAffairsArticle { id: string; title: string; summary: string; source_title: string; publisher: string; source_url: string; source_type: string; publication_date: string | null; retrieved_at: string; subject: string; topic: string; syllabus_tags_json: string[]; importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string; saved: boolean; opened: boolean }
 export interface CurrentAffairsBrief { id: string; brief_date: string; language: string; title: string; overview: string; article_ids_json: string[]; subject_breakdown_json: Record<string, string[]>; prelims_points_json: string[]; mains_points_json: string[]; updated_at: string }
-export interface CurrentAffairsSummary { unread_important_stories: number; top_subject: string | null; saved_articles: number; daily_brief_completed: boolean }
+export interface CurrentAffairsSummary { unread_important_stories: number; top_subject: string | null; saved_articles: number; daily_brief_completed: boolean; today_quiz_completed: boolean; latest_quiz_score: number | null; high_risk_article_count: number; next_revision: string | null }
+export interface CurrentAffairsQuizQuestion { id: string; question_type: string; question: string; options_json: string[]; article_id: string; source_url: string; subject: string; topic: string; difficulty: string }
+export interface CurrentAffairsQuiz { id: string; title: string; period_type: string; date_from: string; date_to: string; question_count: number; difficulty: string; status: string; article_ids_json: string[]; questions: CurrentAffairsQuizQuestion[] }
+export interface CurrentAffairsQuizResult { id: string; score: number; total: number; percentage: number; results: Array<{ question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; article_id: string; source_url: string; topic: string }>; weak_article_ids: string[]; weak_topics: string[] }
+export interface CurrentAffairsRetention { id: string; article_id: string; subject: string; topic: string; retention_score: number; correct_attempts: number; incorrect_attempts: number; recall_failures: number; last_attempt_at: string | null; last_revised_at: string | null; next_revision_at: string | null; risk_level: string }
+export interface CurrentAffairsRetentionOverview { average_retention: number; high_risk_articles: CurrentAffairsRetention[]; due_for_revision: CurrentAffairsRetention[]; weak_subjects: Array<{ subject: string; score: number }>; weekly_trend: Array<{ date: string; percentage: number }>; saved_but_unrevised_article_ids: string[] }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -325,23 +329,6 @@ export async function uploadPdf(file: File, signal?: AbortSignal): Promise<unkno
   return contentType.includes('application/json') ? response.json() : response.text()
 }
 
-async function communityRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/community${path}`, init)
-  if (!response.ok) throw new Error(`Community request failed (${response.status}): ${await response.text()}`)
-  return response.status === 204 ? undefined as T : response.json()
-}
-export const getCommunityGroups = () => communityRequest<CommunityGroup[]>('/groups')
-export const getCommunityPosts = (params = '') => communityRequest<CommunityPost[]>(`/posts${params ? `?${params}` : ''}`)
-export const getCommunityPost = (id: string) => communityRequest<CommunityPost>(`/posts/${id}`)
-export const createCommunityPost = (data: { group_id: string; title: string; content: string; language: string; source_url?: string }) => communityRequest<CommunityPost>('/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-export const updateCommunityPost = (id: string, data: Partial<{ title: string; content: string; language: string; source_url: string | null }>) => communityRequest<CommunityPost>(`/posts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-export const deleteCommunityPost = (id: string) => communityRequest<void>(`/posts/${id}`, { method: 'DELETE' })
-export const getCommunityComments = (id: string) => communityRequest<CommunityComment[]>(`/posts/${id}/comments`)
-export const createCommunityComment = (id: string, content: string) => communityRequest<CommunityComment>(`/posts/${id}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) })
-export const deleteCommunityComment = (id: string) => communityRequest<void>(`/comments/${id}`, { method: 'DELETE' })
-export const saveCommunityPost = (id: string, saved: boolean) => communityRequest<void>(`/posts/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
-export const reportCommunityPost = (id: string, reason: string, details?: string) => communityRequest<void>('/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_type: 'post', target_id: id, reason, details }) })
-
 async function roadmapRequest<T>(path = '', init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}/visual-roadmaps${path}`, init)
   if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string | { message?: string } } | null; const detail = typeof body?.detail === 'object' ? body.detail.message : body?.detail; throw new Error(detail || `Visual roadmap request failed (${response.status})`) }
@@ -356,14 +343,29 @@ export const getRoadmapQuiz = (id: string) => roadmapRequest<RoadmapQuiz>(`/${id
 export const submitRoadmapQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => roadmapRequest<RoadmapQuizResult>(`/${id}/quiz/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
 
 async function currentAffairsRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/current-affairs${path}`, init)
-  if (!response.ok) throw new Error(`Current affairs request failed (${response.status}): ${await response.text()}`)
+  let response: Response
+  try { response = await fetch(`${API_BASE_URL}/current-affairs${path}`, init) }
+  catch { throw new CurrentAffairsApiError(0, 'Unable to reach the Current Affairs service. Check the backend and retry.') }
+  if (!response.ok) {
+    const raw = await response.text(); let message = raw
+    try { const parsed = JSON.parse(raw) as { detail?: string | Array<{ msg?: string }> }; message = typeof parsed.detail === 'string' ? parsed.detail : Array.isArray(parsed.detail) ? parsed.detail.map(item => item.msg).filter(Boolean).join('; ') : raw } catch { /* use text */ }
+    throw new CurrentAffairsApiError(response.status, message || `Request failed (${response.status})`)
+  }
   return response.status === 204 ? undefined as T : response.json()
 }
+export class CurrentAffairsApiError extends Error { constructor(public status: number, message: string) { super(message); this.name = 'CurrentAffairsApiError' } }
 export const getCurrentAffairsArticles = (params = '') => currentAffairsRequest<CurrentAffairsArticle[]>(`/articles${params ? `?${params}` : ''}`)
 export const getCurrentAffairsArticle = (id: string) => currentAffairsRequest<CurrentAffairsArticle>(`/articles/${id}`)
 export const getCurrentAffairsBrief = (date: string) => currentAffairsRequest<CurrentAffairsBrief>(`/daily?date=${encodeURIComponent(date)}`)
+export const getCurrentAffairsBriefOptional = createCachedOptionalLoader(getCurrentAffairsBrief, reason => reason instanceof CurrentAffairsApiError && reason.status === 404)
 export const saveCurrentAffairsArticle = (id: string, saved: boolean) => currentAffairsRequest<void>(`/articles/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
 export const getCurrentAffairsSummary = () => currentAffairsRequest<CurrentAffairsSummary>('/summary')
+export type CurrentAffairsQuizPeriod = 'daily' | 'weekly' | 'custom'
+export type CurrentAffairsQuizDifficulty = 'easy' | 'standard' | 'difficult'
+export interface CurrentAffairsQuizCreate { period_type: CurrentAffairsQuizPeriod; date_from: string; date_to: string; question_count: number; difficulty: CurrentAffairsQuizDifficulty }
+export const createCurrentAffairsQuiz = (payload: CurrentAffairsQuizCreate) => currentAffairsRequest<CurrentAffairsQuiz>('/quizzes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+export const submitCurrentAffairsQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => currentAffairsRequest<CurrentAffairsQuizResult>(`/quizzes/${id}/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
+export const getCurrentAffairsRetentionOverview = () => currentAffairsRequest<CurrentAffairsRetentionOverview>('/retention/overview')
+export const markCurrentAffairsRevised = (id: string) => currentAffairsRequest<CurrentAffairsRetention>(`/retention/${id}/revise`, { method: 'POST' })
 
 export { API_BASE_URL }

@@ -64,12 +64,20 @@
 - Trade-off: Recommendations require more context and careful explanation.
 - Status: Accepted
 
-## Community sequencing
+## Community removed from the MVP
 
-- Date: Existing project decision; recorded 2026-07-14
-- Decision: Implement Community only after Mentor Intelligence.
-- Reason: Community popularity must not distort mastery or mentor guidance.
-- Trade-off: Social features arrive later in the roadmap.
+- Date: 2026-07-15
+- Decision: Community removed from the MVP.
+- Reason: The project is focusing on the core AI mentor, personalization, mastery, Current Affairs, RAG, visual learning, and exam preparation experience.
+- Trade-off: Existing local Community tables remain unused until a future controlled migration removes them.
+- Status: Accepted
+
+## Premium frontend application shell
+
+- Date: 2026-07-15
+- Decision: Compose existing frontend features inside one desktop-first application shell with a fixed navigation sidebar, sticky local-navigation header, and responsive drawer.
+- Reason: A stable shell gives the AI mentor, Current Affairs, revision, progress, profile, and visual-learning workflows one serious UPSC-focused identity without changing backend contracts.
+- Trade-off: Library and quiz overview pages can only expose actions supported by existing APIs; no mock document catalog or aggregate quiz backend was introduced.
 - Status: Accepted
 
 ## Formatting repair
@@ -118,4 +126,28 @@
 - Decision: Build current affairs over the existing trusted web policy, persist grounded UPSC summaries and deterministic daily briefs, and index accepted summaries in the existing RAG collection with explicit current-affairs provenance.
 - Reason: Learners need reusable, source-transparent daily material that chat can retrieve without duplicating search or allowing reading activity to inflate mastery.
 - Trade-off: Collection is conservative and internal/manual in Phase 1; extraction limits coverage, and scheduling, notifications, quizzes, payments, and institutional analytics remain out of scope.
+- Status: Accepted
+
+## Current Affairs live search provider
+
+- Date: 2026-07-15
+- Decision: Configure Bing RSS as the credential-free live discovery provider, reject legacy placeholder provider names, and keep direct URL validation independent of provider credentials while enforcing the same trusted-domain and extraction policy.
+- Reason: The previous `local_first` label concealed a DuckDuckGo HTTP 202 challenge page as a valid zero-result collection.
+- Trade-off: Public search ranking can still return irrelevant results; diagnostics expose those domain rejections and explicit query overrides allow focused retries.
+- Status: Accepted
+
+## Current Affairs article acceptance boundary
+
+- Date: 2026-07-15
+- Decision: Apply deterministic article-page quality checks before Ollama and retain a separate post-generation grounding check for core facts and every numeric claim.
+- Reason: Trusted home and index pages are valid domains but poor current-affairs evidence, while optional summary fields should not invalidate a grounded article.
+- Trade-off: Conservative URL/body heuristics may reject unusual official layouts; direct trusted URLs expose the exact quality reason for targeted diagnosis.
+- Status: Accepted
+
+## Current Affairs quiz and retention
+
+- Date: 2026-07-15
+- Decision: Generate quizzes deterministically from accepted persisted article fields, use one user/quiz attempt as the idempotency boundary, and maintain a separate bounded article-retention estimate driven only by quiz answers and explicit revision.
+- Reason: Current Affairs recall needs auditable source citations and must never let reading, saving, popularity, or repeated submission inflate retention or mastery.
+- Trade-off: Question variety is limited by stored facts, true/false statements remain grounded true statements, and insufficient distinct content returns an error rather than inventing distractors.
 - Status: Accepted

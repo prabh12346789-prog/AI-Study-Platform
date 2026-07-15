@@ -8,7 +8,7 @@ ActivityEventType = Literal[
     "revision_completed", "video_opened", "recommendation_accepted",
     "recommendation_skipped",
     "study_time_logged",
-    "community_post_created", "community_comment_created", "community_post_saved", "community_post_reported",
+    "current_affairs_quiz_started", "current_affairs_quiz_completed", "current_affairs_revision_completed",
 ]
 
 
@@ -28,7 +28,7 @@ class ActivityEventResponse(BaseModel):
 
     id: str
     user_id: str
-    event_type: ActivityEventType
+    event_type: str
     conversation_id: str | None
     subject: str | None
     topic: str | None

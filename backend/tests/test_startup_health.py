@@ -26,3 +26,7 @@ def test_health_is_ready_without_loading_heavy_chat_services():
     assert get_orchestrator.cache_info().currsize == 0
     assert EmbeddingService.is_loaded() == embeddings_before
     assert VectorStore.is_initialized() == vector_store_before
+
+
+def test_router_excludes_removed_community_endpoints():
+    assert not any(path.startswith("/community") for path in app.openapi()["paths"])

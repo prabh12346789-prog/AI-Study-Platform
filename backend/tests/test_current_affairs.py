@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 from src.main import app
 from src.core.config import settings
 from src.api.routes import current_affairs as route
-from scripts.collect_current_affairs import run_collection
+from scripts.collect_current_affairs import build_parser, run_collection
+from src.search.web_search import WebSearch
 
 
 class SummaryLlm:
@@ -21,16 +22,21 @@ class SummaryLlm:
             "background": "The measure follows the existing monetary policy framework.",
             "why_it_matters": "It affects inflation management and financial conditions.",
             "prelims_facts": ["RBI conducts monetary policy", "The repo rate is a policy instrument"],
-            "mains_relevance": "Discuss inflation control and growth trade-offs in monetary policy.",
-            "syllabus_tags": ["GS III", "Indian Economy"], "importance_level": "high"})
+            "mains_relevance": ["Discuss inflation control and growth trade-offs in monetary policy."],
+            "subject": "Economy", "topic": "Monetary Policy", "importance_level": "high"})
 
 
 def trusted_chunk(text=None, url="https://rbi.org.in/policy-update", publication_date=None):
-    text = text or ("RBI monetary policy inflation repo rate economy financial stability. " * 8)
+    text = text or "\n".join([
+        "The Reserve Bank announced a grounded monetary policy development affecting inflation and financial conditions.",
+        "The measure follows the existing monetary policy framework and uses the repo rate as a policy instrument.",
+        "RBI monetary policy decisions influence liquidity, economic growth, financial stability, and inflation management.",
+        "The official update explains the decision and its implications for regulated banks and the Indian economy."])
     return {"text": text, "score": 1.0, "source_type": "web", "source_url": url,
         "source_title": "Monetary Policy Update", "publisher": "Reserve Bank of India", "domain": "rbi.org.in",
         "retrieved_at": datetime.now(timezone.utc).isoformat(), "publication_date": publication_date or date.today().isoformat(),
-        "source_category": "official_institution", "trust_level": "official", "content_hash": "hash-" + url}
+        "source_category": "official_institution", "trust_level": "official", "content_hash": "hash-" + url,
+        "metadata": {"paragraphs": text.splitlines(), "headings": ["Monetary Policy Update"], "link_text_length": 0}}
 
 
 def setup(tmp_path):
@@ -148,3 +154,114 @@ def test_local_script_calls_existing_service():
     service = Service(); args = SimpleNamespace(date=date(2026, 7, 15), max_results=10, generate_brief=False, language="english")
     result = asyncio.run(run_collection(args, service))
     assert service.called[0] == args.date and service.called[1]["max_results"] == 10 and result["date"] == args.date
+
+
+def test_unconfigured_provider_returns_clear_error(monkeypatch):
+    monkeypatch.setattr(settings, "SEARCH_PROVIDER", "local_first")
+    with __import__("pytest").raises(RuntimeError, match="Current Affairs search provider is not configured for live web discovery"):
+        WebSearch(cache=SimpleNamespace()).validate_configuration()
+
+
+def test_cli_query_and_direct_url_are_repeatable():
+    args = build_parser().parse_args(["--date", "2026-07-15", "--query", "PIB query", "--query", "RBI query",
+        "--url", "https://pib.gov.in/story", "--url", "https://rbi.org.in/story"])
+    assert args.query == ["PIB query", "RBI query"]
+    assert args.url == ["https://pib.gov.in/story", "https://rbi.org.in/story"]
+
+
+def test_default_queries_are_date_aware_and_cover_required_areas():
+    queries = CurrentAffairsService.default_queries(date(2026, 7, 15)); joined = " ".join(queries).casefold()
+    assert len(queries) == 5 and "15 july 2026" in joined
+    for term in ("pib.gov.in", "rbi.org.in", "parliament", "environment", "science", "un.org"):
+        assert term in joined
+
+
+def test_raw_zero_results_are_explained(tmp_path):
+    class Web:
+        provider_name = "test_provider"
+        def validate_configuration(self, **_kwargs): pass
+        def search(self, _query): return {"chunks": [], "raw_results": 0, "zero_result_reason": "no search matches"}
+    service, _ = setup(tmp_path); service.web = Web()
+    result = asyncio.run(service.collect_for_date(date(2026, 7, 15), queries=["nothing"]));
+    assert result["raw_results"] == 0 and result["zero_result_reason"] == "no search matches"
+
+
+def test_direct_url_allowlist_and_extraction(monkeypatch):
+    web = WebSearch(cache=SimpleNamespace())
+    monkeypatch.setattr(web, "_fetch_approved", lambda candidate, *_args: (trusted_chunk(url=candidate["url"]), None))
+    assert len(web.fetch_url("https://rbi.org.in/story", "RBI")["chunks"]) == 1
+    rejected = web.fetch_url("https://example.com/story", "story")
+    assert rejected["chunks"] == [] and rejected["rejected_domains"] == 1
+
+
+def test_extraction_failure_does_not_stop_remaining_sources_and_success_is_summarized(tmp_path):
+    class Web:
+        provider_name = "test_provider"
+        def validate_configuration(self, **_kwargs): pass
+        def search(self, query):
+            chunks = [] if query == "bad" else [trusted_chunk(url="https://rbi.org.in/success")]
+            return {"chunks": chunks, "raw_results": 1, "extraction_attempts": 1,
+                "extraction_successes": len(chunks), "zero_result_reason": None}
+    service, _ = setup(tmp_path); service.web = Web()
+    result = asyncio.run(service.collect_for_date(date(2026, 7, 15), queries=["bad", "good"]))
+    assert result["extraction_failures"] == 1 and result["accepted"] == 1
+    assert service.list_articles()[0][0].status == "active"
+
+
+def test_homepage_and_index_rejected_before_summarization(tmp_path):
+    class CountingLlm(SummaryLlm):
+        calls = 0
+        async def generate(self, **kwargs): self.calls += 1; return await super().generate(**kwargs)
+    llm = CountingLlm(); service = CurrentAffairsService(db_path=str(tmp_path/"quality.sqlite3"), llm=llm, indexer=lambda *_: None)
+    homepage = trusted_chunk(url="https://www.rbi.org.in/")
+    index = trusted_chunk(url="https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx")
+    assert asyncio.run(service.ingest_chunk(homepage)).status == "rejected"
+    assert asyncio.run(service.ingest_chunk(index)).status == "rejected"
+    assert llm.calls == 0
+
+
+def test_article_quality_scoring_and_article_ranks_above_homepage():
+    article = trusted_chunk(publication_date="2026-07-15")
+    quality = WebSearch.article_quality(article)
+    assert quality["is_article"] and quality["quality_score"] >= .75
+    homepage = {"url": "https://www.rbi.org.in/", "title": "Home - Reserve Bank of India"}
+    result = {"url": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60001", "title": "RBI policy update"}
+    assert WebSearch._candidate_rank(result, "RBI policy update 15 July 2026") > WebSearch._candidate_rank(homepage, "RBI policy update 15 July 2026")
+
+
+def test_optional_summary_fields_may_be_empty_and_fenced_extra_text_parses():
+    raw = 'Result follows:\n```json\n{"what_happened":"RBI published an official monetary policy update.","prelims_facts":[],"mains_relevance":[],"subject":"Economy","topic":"Monetary Policy","importance_level":"medium"}\n```\nDone.'
+    summary = CurrentAffairsService._parse_summary(raw)
+    assert summary.background == "" and summary.prelims_facts == [] and summary.mains_relevance == []
+
+
+def test_malformed_json_gets_one_safe_structural_repair():
+    raw = '{"what_happened":"RBI published an official monetary policy update.","importance_level":"medium",}'
+    assert CurrentAffairsService._parse_summary(raw).what_happened.startswith("RBI published")
+
+
+def test_parser_normalizes_optional_empty_array_and_fact_objects():
+    raw = json.dumps({"what_happened": "RBI published an official monetary policy update.",
+        "background": [], "prelims_facts": [{"fact": "RBI conducts monetary policy."}],
+        "importance_level": "medium"})
+    summary = CurrentAffairsService._parse_summary(raw)
+    assert summary.background == "" and summary.prelims_facts == ["RBI conducts monetary policy."]
+
+
+def test_unsupported_factual_summary_is_rejected(tmp_path):
+    class UnsupportedLlm:
+        async def generate(self, **_kwargs):
+            return json.dumps({"what_happened": "RBI raised the repo rate to 99 percent in the official update.",
+                "importance_level": "high"})
+    service = CurrentAffairsService(db_path=str(tmp_path/"unsupported.sqlite3"), llm=UnsupportedLlm(), indexer=lambda *_: None)
+    assert asyncio.run(service.ingest_chunk(trusted_chunk())).status == "rejected"
+
+
+def test_rejected_page_does_not_stop_valid_article_and_brief_generates(tmp_path):
+    class Web:
+        provider_name = "test_provider"
+        def validate_configuration(self, **_kwargs): pass
+        def search(self, _query): return {"chunks": [trusted_chunk(url="https://rbi.org.in/"), trusted_chunk(url="https://rbi.org.in/article")], "raw_results": 2}
+    service, _ = setup(tmp_path); service.web = Web()
+    result = asyncio.run(service.collect_for_date(date.today(), queries=["RBI"], generate_brief=True))
+    assert result["accepted"] == 1 and result["rejected"] == 1 and result["daily_brief"] == "generated"

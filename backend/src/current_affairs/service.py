@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import uuid
+import logging
 from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 
@@ -18,16 +19,20 @@ from src.current_affairs.models import CurrentAffairsArticle, DailyCurrentAffair
 from src.memory.storage import get_session_factory
 from src.rag.embeddings import EmbeddingService
 from src.rag.vector_store import VectorStore
-from src.search.web_search import TrustedSourcePolicy, WebSearch
+from src.search.web_search import APPROVED_DOMAINS, TrustedSourcePolicy, WebSearch
+from src.core.config import settings
+
+log = logging.getLogger(__name__)
 
 
 class ArticleSummary(BaseModel):
     what_happened: str = Field(min_length=20, max_length=900)
-    background: str = Field(min_length=10, max_length=900)
-    why_it_matters: str = Field(min_length=10, max_length=700)
-    prelims_facts: list[str] = Field(min_length=1, max_length=6)
-    mains_relevance: str = Field(min_length=10, max_length=700)
-    syllabus_tags: list[str] = Field(min_length=1, max_length=6)
+    background: str = Field(default="", max_length=900)
+    why_it_matters: str = Field(default="", max_length=700)
+    prelims_facts: list[str] = Field(default_factory=list, max_length=6)
+    mains_relevance: list[str] = Field(default_factory=list, max_length=6)
+    subject: str = "General Studies"
+    topic: str = "Current Affairs"
     importance_level: str = Field(pattern="^(low|medium|high)$")
 
 
@@ -50,20 +55,43 @@ class CurrentAffairsService:
                 results.append(await self.ingest_chunk(chunk))
         return results
 
-    async def collect_for_date(self, collection_date: date, *, max_results=10, generate_brief=False, language="english"):
-        queries = [
-            f"site:pib.gov.in {collection_date.isoformat()} important government developments",
-            f"site:rbi.org.in OR site:sebi.gov.in {collection_date.isoformat()} economy policy developments",
-            f"site:gov.in OR site:parliamentofindia.nic.in {collection_date.isoformat()} UPSC developments",
-            f"site:un.org {collection_date.isoformat()} India international developments",
+    @staticmethod
+    def default_queries(collection_date: date):
+        stamp = collection_date.strftime("%d %B %Y")
+        return [
+            f"site:pib.gov.in India government schemes {stamp}",
+            f"site:rbi.org.in RBI India economy {stamp}",
+            f"site:parliamentofindia.nic.in Parliament India governance {stamp}",
+            f"site:gov.in India environment science technology {stamp}",
+            f"site:un.org India international institutions {stamp}",
         ]
-        collected = accepted = rejected = duplicates = 0; article_ids = []; errors = []
-        for query in queries:
+
+    async def collect_for_date(self, collection_date: date, *, max_results=10, generate_brief=False, language="english", queries=None, urls=None):
+        queries = list(queries) if queries else ([] if urls else self.default_queries(collection_date))
+        urls = list(urls or [])
+        if hasattr(self.web, "validate_configuration"):
+            self.web.validate_configuration(direct_urls=bool(urls and not queries))
+        provider_name = getattr(self.web, "provider_name", type(self.web).__name__)
+        log.info("Current Affairs collection start date=%s enabled=%s provider=%s allowlist=%d max_results=%d queries=%r direct_urls=%d",
+            collection_date.isoformat(), settings.ENABLE_WEB_SEARCH, provider_name,
+            len(APPROVED_DOMAINS), max_results, queries, len(urls))
+        collected = accepted = rejected = duplicates = 0; article_ids = []; errors = []; source_progress = []
+        diagnostics = {"raw_results": 0, "approved_results": 0, "rejected_domains": 0,
+            "rejected_redirects": 0, "extraction_attempts": 0, "extraction_successes": 0}
+        zero_reasons = []
+        work = [("query", query) for query in queries] + [("url", url) for url in urls]
+        for kind, value in work:
             if collected >= max_results: break
-            try: found = await asyncio.to_thread(self.web.search, query)
+            try:
+                if kind == "url": found = await asyncio.to_thread(self.web.fetch_url, value, f"current affairs {collection_date.isoformat()}")
+                else: found = await asyncio.to_thread(self.web.search, value)
             except Exception as error:
-                errors.append(f"Trusted search failed: {type(error).__name__}"); continue
+                errors.append(f"Trusted {kind} failed: {type(error).__name__}"); continue
             if found.get("error"): errors.append(str(found["error"]))
+            source_progress.extend(found.get("source_progress", []))
+            for key in diagnostics: diagnostics[key] += int(found.get(key, 0))
+            diagnostics["approved_results"] += len(found.get("chunks", []))
+            if found.get("zero_result_reason"): zero_reasons.append(found["zero_result_reason"])
             for chunk in found.get("chunks", []):
                 if collected >= max_results: break
                 collected += 1
@@ -75,13 +103,28 @@ class CurrentAffairsService:
                 if existing:
                     duplicates += 1; article_ids.append(existing.id); continue
                 row = await self.ingest_chunk(chunk); article_ids.append(row.id)
+                quality = chunk.get("article_quality") or WebSearch.article_quality(chunk)
+                final_progress = {"url": chunk.get("source_url"), "page_type": quality["page_type"],
+                    "quality_score": quality["quality_score"], "status": "accepted" if row.status == "active" else "rejected",
+                    "reason": row.summary if row.status != "active" else "grounded article accepted",
+                    "summarization": "accepted" if row.status == "active" else "rejected"}
+                pending = next((item for item in source_progress if item.get("url") == chunk.get("source_url") and item.get("status") == "candidate"), None)
+                if pending: pending.update(final_progress)
+                else: source_progress.append(final_progress)
                 if row.status == "active": accepted += 1
                 else: rejected += 1
         brief_status, brief_error = "not_requested", None
         if generate_brief:
             try: self.generate_daily(collection_date, language); brief_status = "generated"
             except Exception as error: brief_status, brief_error = "failed", str(error)
-        return {"date": collection_date, "collected": collected, "accepted": accepted, "rejected": rejected,
+        log.info("Current Affairs collection complete raw=%d approved=%d rejected_domains=%d extraction_attempts=%d extraction_successes=%d final_candidates=%d",
+            diagnostics["raw_results"], diagnostics["approved_results"], diagnostics["rejected_domains"],
+            diagnostics["extraction_attempts"], diagnostics["extraction_successes"], collected)
+        return {"date": collection_date, "search_provider": provider_name if queries else "direct_url",
+            "queries_executed": queries, **diagnostics, "zero_result_reason": "; ".join(dict.fromkeys(zero_reasons)) or None,
+            "source_progress": source_progress,
+            "extraction_failures": diagnostics["extraction_attempts"] - diagnostics["extraction_successes"],
+            "collected": collected, "accepted": accepted, "rejected": rejected,
             "duplicates": duplicates, "article_ids": list(dict.fromkeys(article_ids)), "collection_errors": errors,
             "daily_brief": brief_status, "brief_error": brief_error}
 
@@ -93,22 +136,26 @@ class CurrentAffairsService:
                 CurrentAffairsArticle.source_url == url, CurrentAffairsArticle.content_hash == content_hash)))
             if existing: return existing
         classification = self.classifier.classify(chunk.get("text", ""))
-        status = "active" if policy and len(chunk.get("text", "").strip()) >= 100 else "rejected"
+        quality = chunk.get("article_quality") or WebSearch.article_quality(chunk)
+        status = "active" if policy and quality["is_article"] else "rejected"
         summary = None
         if status == "active":
-            prompt = f"""Using ONLY the trusted source text below, create JSON with keys what_happened, background, why_it_matters, prelims_facts, mains_relevance, syllabus_tags, importance_level. Do not add unsupported facts. Importance must be low, medium, or high.\nSOURCE: {chunk.get('publisher')} | {url}\nTEXT:\n{chunk['text']}"""
+            prompt = f"""Use ONLY the article body and metadata below. Return one strict JSON object with keys what_happened, background, why_it_matters, prelims_facts, mains_relevance, subject, topic, importance_level. prelims_facts and mains_relevance must be arrays of plain strings and may be empty. background and why_it_matters must be strings and may be empty. what_happened must state the grounded core event. Copy dates and quantities exactly when used; never calculate, extrapolate, or invent an end date or consequence. Omit an optional point instead of inferring it. importance_level must be low, medium, or high.\nTITLE: {chunk.get('source_title')}\nPUBLISHER: {chunk.get('publisher')}\nURL: {url}\nPUBLICATION DATE: {chunk.get('publication_date') or 'unavailable'}\nARTICLE BODY:\n{chunk['text']}"""
             try:
                 raw = await self.llm.generate(prompt=prompt, mode="learn", depth="quick")
-                raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.I)
-                summary = ArticleSummary.model_validate(json.loads(raw))
+                summary = self._parse_summary(raw)
+                if not self._summary_is_grounded(summary, chunk["text"]):
+                    status = "rejected"; summary = None
             except (json.JSONDecodeError, ValidationError, RuntimeError): status = "rejected"
         if summary:
             summary_text = (f"What happened: {summary.what_happened}\nBackground: {summary.background}\n"
                 f"Why it matters: {summary.why_it_matters}\nSource citation: {chunk.get('publisher')} — {url}")
-            prelims = "\n".join(summary.prelims_facts); mains = summary.mains_relevance
-            tags, importance = summary.syllabus_tags, summary.importance_level
+            prelims = "\n".join(summary.prelims_facts); mains = "\n".join(summary.mains_relevance)
+            classification = {"subject": summary.subject or classification["subject"], "topic": summary.topic or classification["topic"]}
+            tags, importance = [summary.subject, summary.topic], summary.importance_level
         else:
-            summary_text, prelims, mains, tags, importance = "Rejected: insufficient trusted grounded extraction.", "", "", [], "low"
+            reason = "; ".join(quality["reasons"]) if not quality["is_article"] else "summary missing core grounded factual content"
+            summary_text, prelims, mains, tags, importance = f"Rejected: {reason}.", "", "", [], "low"
         row = CurrentAffairsArticle(id=str(uuid.uuid4()), title=chunk.get("source_title") or "Unavailable source",
             summary=summary_text, source_title=chunk.get("source_title") or "Unavailable source",
             publisher=chunk.get("publisher") or (policy[0] if policy else "Unapproved publisher"), source_url=url or f"rejected:{uuid.uuid4()}",
@@ -120,6 +167,36 @@ class CurrentAffairsService:
         with self.sessions() as session: session.add(row); session.commit(); session.refresh(row)
         if row.status == "active": await asyncio.to_thread(self._index, row)
         return row
+
+    @staticmethod
+    def _parse_summary(raw):
+        cleaned = re.sub(r"```(?:json)?|```", "", raw.strip(), flags=re.I)
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start < 0 or end < start: raise json.JSONDecodeError("JSON object not found", cleaned, 0)
+        candidate = cleaned[start:end + 1]
+        try: data = json.loads(candidate)
+        except json.JSONDecodeError:
+            repaired = re.sub(r",\s*([}\]])", r"\1", candidate.replace("“", '"').replace("”", '"'))
+            data = json.loads(repaired)
+        for key in ("background", "why_it_matters"):
+            if isinstance(data.get(key), list): data[key] = " ".join(str(value) for value in data[key] if value)
+        for key in ("prelims_facts", "mains_relevance"):
+            value = data.get(key, [])
+            if isinstance(value, str): value = [value] if value else []
+            if isinstance(value, list):
+                value = [str(next(iter(item.values()))) if isinstance(item, dict) and item else str(item) for item in value]
+            data[key] = value
+        return ArticleSummary.model_validate(data)
+
+    @staticmethod
+    def _summary_is_grounded(summary, source_text):
+        source = source_text.casefold()
+        claims = " ".join([summary.what_happened, summary.background, summary.why_it_matters,
+            *summary.prelims_facts, *summary.mains_relevance])
+        if any(number not in source for number in re.findall(r"\b\d+(?:\.\d+)?%?\b", claims)): return False
+        words = {word for word in re.findall(r"[a-z]{5,}", summary.what_happened.casefold())
+            if word not in {"which", "their", "about", "would", "could", "announced", "stated"}}
+        return len(summary.what_happened.strip()) >= 20 and (not words or sum(word in source for word in words) / len(words) >= .30)
 
     def _index(self, row):
         chunk = {"text": f"{row.title}\n{row.summary}\nPrelims: {row.relevance_prelims}\nMains: {row.relevance_mains}",
@@ -202,6 +279,12 @@ class CurrentAffairsService:
         subjects = Counter(row.subject for row, _, _ in items)
         completed = any((event.metadata_json or {}).get("brief_date") == today.isoformat()
             for event in self.activity.list_events(user_id=user_id, event_type="daily_brief_completed"))
+        from src.current_affairs.quiz_service import CurrentAffairsQuizService
+        quiz = CurrentAffairsQuizService(); attempts = quiz.attempts(None, user_id); retention = quiz.retention(user_id)
+        latest = attempts[0] if attempts else None; next_revision = min((r.next_revision_at for r in retention if r.next_revision_at), default=None)
         return {"unread_important_stories": sum(row.importance_level == "high" and not opened for row, _, opened in items),
             "top_subject": subjects.most_common(1)[0][0] if subjects else None,
-            "saved_articles": len(self.list_articles(user_id=user_id, saved_only=True)), "daily_brief_completed": completed}
+            "saved_articles": len(self.list_articles(user_id=user_id, saved_only=True)), "daily_brief_completed": completed,
+            "today_quiz_completed": bool(latest and latest.completed_at.date() == today),
+            "latest_quiz_score": latest.percentage if latest else None,
+            "high_risk_article_count": sum(r.risk_level == "high" for r in retention), "next_revision": next_revision}

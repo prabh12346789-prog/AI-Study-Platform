@@ -11,7 +11,7 @@ from src.mentor.models import MentorRecommendation
 from src.profile.manager import ProfileManager
 from src.video.manager import VideoRecommendationService
 
-ACTION_TYPES = {"revise_topic", "take_quiz", "review_explanation", "practise_recall", "practise_mains_answer", "watch_video"}
+ACTION_TYPES = {"revise_topic", "take_quiz", "review_explanation", "practise_recall", "practise_mains_answer", "watch_video", "take_current_affairs_quiz", "revise_current_affairs"}
 STATUSES = {"pending", "accepted", "completed", "skipped", "expired"}
 
 
@@ -40,7 +40,10 @@ class MentorDecisionEngine:
         incorrect = sum(e.evidence_type in {"quiz_incorrect", "recall_failure"} for e in recent)
         mains = [e for e in evidence if e.evidence_type == "mains_answer_score"]
         preference = self.profile.get_or_create().preferred_content_type
-        if recall_failure: action = "practise_recall"
+        current_affairs = any(e.source == "current_affairs_quiz" for e in evidence)
+        if current_affairs and (mastery.forgetting_risk >= .65 or overdue or incorrect): action = "revise_current_affairs"
+        elif current_affairs: action = "take_current_affairs_quiz"
+        elif recall_failure: action = "practise_recall"
         elif mastery.forgetting_risk >= .65 or overdue: action = "revise_topic"
         elif mains and sum((e.score or 0) for e in mains) / len(mains) < .5: action = "practise_mains_answer"
         elif mastery.mastery_score < .5 and incorrect >= 2:
@@ -58,7 +61,7 @@ class MentorDecisionEngine:
         if overdue: reasons.append("Revision is overdue")
         if recall_failure: reasons.append("A recent recall attempt was unsuccessful")
         if incorrect >= 2: reasons.append(f"{incorrect} recent incorrect attempts")
-        titles = {"revise_topic": "Revise", "take_quiz": "Take a diagnostic quiz on", "review_explanation": "Review", "practise_recall": "Practise recall for", "practise_mains_answer": "Practise a Mains answer on", "watch_video": "Watch a trusted video on"}
+        titles = {"revise_topic": "Revise", "take_quiz": "Take a diagnostic quiz on", "review_explanation": "Review", "practise_recall": "Practise recall for", "practise_mains_answer": "Practise a Mains answer on", "watch_video": "Watch a trusted video on", "take_current_affairs_quiz": "Take a Current Affairs quiz on", "revise_current_affairs": "Revise Current Affairs:"}
         return action, f"{titles[action]} {mastery.topic}", score, reasons, self._duration(available_minutes)
 
     def generate_actions(self, user_id="user_001", available_minutes=None):

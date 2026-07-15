@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     TOP_K_RESULTS: int = 5
     SIMILARITY_THRESHOLD: float = 0.70
     ENABLE_WEB_SEARCH: bool = True
-    SEARCH_PROVIDER: str = "local_first"
+    SEARCH_PROVIDER: str = "bing_rss"
     MAX_WEB_RESULTS: int = 5
     WEB_CACHE_ENABLED: bool = True
     WEB_CACHE_DIR: str = "./data/web_cache"

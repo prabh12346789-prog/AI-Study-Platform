@@ -1,0 +1,13 @@
+{
+    "document_id": "d5030e1f-262d-42d6-833c-d18d9d256007",
+    "original_name": "UPSC_Test_PDF_Historical_Background_Indian_Constitution.pdf",
+    "stored_name": "original.pdf",
+    "user_id": "user_001",
+    "uploaded_at": "2026-07-15T07:48:00.946346",
+    "pages": 4,
+    "word_count": 882,
+    "chunks": 2,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "vectorized": true,
+    "status": "embedded"
+}

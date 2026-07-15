@@ -11,4 +11,3 @@ def test_demo_seed_is_complete_and_idempotent(tmp_path):
     assert first["quiz_mistakes"] >= 1
     assert first["mentor_recommendation"]
     assert first["trusted_video"]
-    assert first["community_posts"] == second["community_posts"] == 2

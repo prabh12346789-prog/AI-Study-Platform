@@ -5,6 +5,7 @@ import html as html_lib
 import json
 import logging
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlparse
@@ -64,38 +65,117 @@ class WebCache:
 
 
 class WebSearch:
-    SEARCH_URL = "https://html.duckduckgo.com/html/?q={query}"
+    PROVIDERS = {
+        "bing_rss": "https://www.bing.com/search?format=rss&q={query}",
+        "duckduckgo_html": "https://html.duckduckgo.com/html/?q={query}",
+    }
     def __init__(self, cache=None): self.cache = cache or WebCache()
 
-    def search(self, question: str):
-        approved, rejected, hits = [], 0, 0
-        try: candidates = self._search_web(question)
+    @property
+    def provider_name(self): return settings.SEARCH_PROVIDER.strip().casefold()
+
+    def validate_configuration(self, *, direct_urls=False):
+        if direct_urls: return
+        if not settings.ENABLE_WEB_SEARCH:
+            raise RuntimeError("Current Affairs search provider is not configured for live web discovery. ENABLE_WEB_SEARCH is false.")
+        if self.provider_name not in self.PROVIDERS:
+            raise RuntimeError("Current Affairs search provider is not configured for live web discovery.")
+        if not APPROVED_DOMAINS:
+            raise RuntimeError("Current Affairs trusted-source allowlist is empty.")
+        if settings.MAX_WEB_RESULTS < 1:
+            raise RuntimeError("Current Affairs maximum web results must be at least 1.")
+
+    def search(self, question: str, max_results=None):
+        self.validate_configuration()
+        limit = min(max_results or settings.MAX_WEB_RESULTS, settings.MAX_WEB_RESULTS)
+        approved, rejected_domains, rejected_redirects, extraction_attempts, extraction_successes, hits = [], 0, 0, 0, 0, 0
+        try: candidates = self._search_web(question, limit)
         except requests.RequestException as error:
             log.warning("Trusted web search failed: %s", type(error).__name__)
-            return {"context": "", "sources": [], "chunks": [], "provider": "web", "error": "trusted_web_unavailable"}
+            return self._result([], provider=self.provider_name, error="provider_unavailable", zero_result_reason="provider unavailable")
+        except (ValueError, ET.ParseError) as error:
+            log.warning("Trusted web query failed: %s", type(error).__name__)
+            return self._result([], provider=self.provider_name, error="query_failure", zero_result_reason="query failure")
         current = any(word in question.casefold() for word in ("current", "latest", "today", "recent", "2025", "2026"))
         classification = SubjectTopicClassifier().classify(question)
+        candidates.sort(key=lambda item: self._candidate_rank(item, question), reverse=True)
+        progress = []
         for candidate in candidates:
             policy = TrustedSourcePolicy.classify(candidate["url"])
-            if not policy: rejected += 1; continue
+            if not policy:
+                rejected_domains += 1
+                progress.append({"url": candidate["url"], "page_type": self.page_type(candidate["url"]),
+                    "quality_score": 0.0, "status": "rejected", "reason": "unapproved domain", "summarization": "not attempted"})
+                continue
             publisher, category, trust, domain = policy
             cached = self.cache.get(candidate["url"], current=current)
-            if cached: chunk = cached; hits += 1
+            if cached:
+                quality = self.article_quality(cached)
+                if not quality["is_article"]:
+                    progress.append({"url": candidate["url"], "page_type": quality["page_type"],
+                        "quality_score": quality["quality_score"], "status": "rejected",
+                        "reason": "; ".join(quality["reasons"]), "summarization": "not attempted"})
+                    continue
+                chunk = {**cached, "article_quality": quality, "search_rank": self._candidate_rank(candidate, question)}; hits += 1
             else:
-                chunk = self._fetch_approved(candidate, publisher, category, trust, domain, question)
-                if not chunk: rejected += 1; continue
+                extraction_attempts += 1
+                chunk, failure = self._fetch_approved(candidate, publisher, category, trust, domain, question)
+                if not chunk:
+                    rejected_redirects += failure == "redirect"
+                    progress.append({"url": candidate["url"], "page_type": self.page_type(candidate["url"]),
+                        "quality_score": 0.0, "status": "rejected", "reason": failure, "summarization": "not attempted"})
+                    continue
+                extraction_successes += 1
                 chunk["subject"], chunk["topic"] = classification["subject"], classification["topic"]
                 self.cache.put(chunk)
             approved.append(chunk)
-            if len(approved) >= settings.MAX_WEB_RESULTS: break
-        log.info("Trusted web fallback approved=%d rejected=%d cache_hits=%d", len(approved), rejected, hits)
-        return {"context": self._build_context(approved), "sources": [self._source(chunk) for chunk in approved],
-                "chunks": approved, "provider": "web", "cache_hits": hits, "rejected_count": rejected}
+            progress.append({"url": chunk["source_url"], "page_type": chunk["article_quality"]["page_type"],
+                "quality_score": chunk["article_quality"]["quality_score"], "status": "candidate",
+                "reason": "; ".join(chunk["article_quality"]["reasons"]), "summarization": "pending"})
+            if len(approved) >= limit: break
+        approved.sort(key=lambda chunk: (chunk["article_quality"]["quality_score"], chunk.get("search_rank", 0)), reverse=True)
+        zero_reason = "no search matches" if not candidates else None
+        log.info("Trusted web provider=%s query=%r raw=%d rejected_domains=%d rejected_redirects=%d extraction_attempts=%d extraction_successes=%d candidates=%d",
+                 self.provider_name, question, len(candidates), rejected_domains, rejected_redirects,
+                 extraction_attempts, extraction_successes, len(approved))
+        return self._result(approved, provider=self.provider_name, raw_results=len(candidates),
+            rejected_domains=rejected_domains, rejected_redirects=rejected_redirects,
+            extraction_attempts=extraction_attempts, extraction_successes=extraction_successes,
+            cache_hits=hits, zero_result_reason=zero_reason, source_progress=progress)
 
-    def _search_web(self, question):
-        response = requests.get(self.SEARCH_URL.format(query=quote_plus(question)), timeout=10,
+    def fetch_url(self, url: str, question: str):
+        policy = TrustedSourcePolicy.classify(url)
+        if not policy:
+            return self._result([], provider="direct_url", raw_results=1, rejected_domains=1)
+        publisher, category, trust, domain = policy
+        chunk, failure = self._fetch_approved({"url": url, "title": url, "snippet": ""}, publisher, category, trust, domain, question)
+        if chunk and "article_quality" not in chunk: chunk["article_quality"] = self.article_quality(chunk)
+        chunks = [chunk] if chunk else []
+        return self._result(chunks, provider="direct_url", raw_results=1, rejected_redirects=int(failure == "redirect"),
+            extraction_attempts=1, extraction_successes=len(chunks), source_progress=[{
+                "url": url, "page_type": self.page_type(url),
+                "quality_score": chunk["article_quality"]["quality_score"] if chunk else 0.0,
+                "status": "candidate" if chunk else "rejected", "reason": failure or "; ".join(chunk["article_quality"]["reasons"]),
+                "summarization": "pending" if chunk else "not attempted"}])
+
+    def _result(self, chunks, **diagnostics):
+        result = {"context": self._build_context(chunks), "sources": [self._source(chunk) for chunk in chunks],
+            "chunks": chunks, "raw_results": 0, "rejected_domains": 0, "rejected_redirects": 0,
+            "extraction_attempts": 0, "extraction_successes": 0, "cache_hits": 0, "zero_result_reason": None,
+            "source_progress": []}
+        result.update(diagnostics); result["rejected_count"] = result["rejected_domains"] + result["rejected_redirects"]
+        return result
+
+    def _search_web(self, question, limit):
+        response = requests.get(self.PROVIDERS[self.provider_name].format(query=quote_plus(question)), timeout=10,
             headers={"User-Agent": "UPSC-AI-Mentor/1.0"}); response.raise_for_status()
-        return self._parse_results(response.text)
+        if self.provider_name == "bing_rss":
+            root = ET.fromstring(response.text)
+            return [{"title": item.findtext("title", ""), "snippet": item.findtext("description", ""),
+                     "url": item.findtext("link", "")} for item in root.findall("./channel/item")][:limit * 4]
+        parsed = self._parse_results(response.text)[:limit * 4]
+        if response.status_code == 202 and not parsed: raise ValueError("search challenge page")
+        return parsed
 
     @staticmethod
     def _canonical_url(raw):
@@ -109,32 +189,105 @@ class WebSearch:
                  "url": self._canonical_url(html_lib.unescape(m.group("url")))} for m in pattern.finditer(html)][:settings.MAX_WEB_RESULTS * 4]
 
     def _fetch_approved(self, candidate, publisher, category, trust, domain, question):
+        initial_type = self.page_type(candidate["url"])
+        if initial_type != "article": return None, f"{initial_type} URL is not an article"
         try:
             response = requests.get(candidate["url"], timeout=10, headers={"User-Agent": "UPSC-AI-Mentor/1.0"}, allow_redirects=True)
             response.raise_for_status()
-        except requests.RequestException: return None
-        if not TrustedSourcePolicy.classify(response.url): return None
+        except requests.RequestException: return None, "fetch"
+        if not TrustedSourcePolicy.classify(response.url): return None, "redirect"
         raw = re.sub(r"<(script|style|nav|footer|header|aside)[^>]*>.*?</\1>", " ", response.text, flags=re.I|re.S)
         title_match = re.search(r"<title[^>]*>(.*?)</title>", raw, re.I|re.S)
         title = self._clean(title_match.group(1)) if title_match else candidate["title"]
+        emphasized = [self._clean(value) for value in re.findall(r"<(?:strong|b)[^>]*>(.*?)</(?:strong|b)>", raw, re.I|re.S)]
+        article_titles = [value for value in emphasized if 20 <= len(value) <= 240 and not any(
+            term in value.casefold() for term in ("increase font", "skip to", "javascript", "redirect to"))]
+        if article_titles: title = max(article_titles, key=len)
         canonical_match = re.search(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)', raw, re.I)
         canonical = html_lib.unescape(canonical_match.group(1)) if canonical_match else response.url
         if not TrustedSourcePolicy.classify(canonical): canonical = response.url
         date_match = re.search(r'<meta[^>]+(?:property|name)=["\'](?:article:published_time|date|last-modified)["\'][^>]+content=["\']([^"\']+)', raw, re.I)
         publication_date = date_match.group(1)[:40] if date_match else None
+        if not publication_date:
+            visible_date = re.search(r"Date\s*:\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})", self._clean(raw), re.I)
+            if visible_date:
+                try: publication_date = datetime.strptime(visible_date.group(1), "%b %d, %Y").date().isoformat()
+                except ValueError: pass
+        if not publication_date:
+            posted = re.search(r"Posted On\s*:\s*(\d{1,2}\s+[A-Z]{3}\s+\d{4})", self._clean(raw), re.I)
+            if posted:
+                try: publication_date = datetime.strptime(posted.group(1).title(), "%d %b %Y").date().isoformat()
+                except ValueError: pass
         headings = [self._clean(value) for value in re.findall(r"<h[1-3][^>]*>(.*?)</h[1-3]>", raw, re.I|re.S)][:8]
-        paragraphs = [self._clean(value) for value in re.findall(r"<p[^>]*>(.*?)</p>", raw, re.I|re.S)]
+        heading_titles = [value for value in headings if len(value) >= 20 and "press release" not in value.casefold()]
+        if heading_titles and ("press release page" in title.casefold() or len(title) > 180): title = heading_titles[0]
+        paragraph_html = re.findall(r"<p[^>]*>(.*?)</p>", raw, re.I|re.S)
+        paragraphs = [self._clean(value) for value in paragraph_html]
+        paragraphs = [value for value in paragraphs if len(value) >= 30]
+        paragraphs = list(dict.fromkeys(paragraphs))
         terms = {word for word in re.findall(r"[a-z]{4,}", question.casefold()) if word not in {"what", "when", "where", "which", "explain", "discuss"}}
         relevant = [value for value in paragraphs if len(value) >= 30 and (not terms or any(term in value.casefold() for term in terms))]
         text = "\n".join(value for value in headings + (relevant or paragraphs[:12]) if len(value) >= 30)[:12000]
         if len(text) < 100: text = candidate.get("snippet", "")
-        if len(text) < 50: return None
+        if len(text) < 50: return None, "insufficient extracted text"
+        quality = self.article_quality({"source_url": canonical, "source_title": title, "text": text,
+            "publication_date": publication_date, "metadata": {"headings": headings, "paragraphs": paragraphs,
+            "link_text_length": sum(len(value) for value in set(self._clean(value) for paragraph in paragraph_html for value in re.findall(r"<a[^>]*>(.*?)</a>", paragraph, re.I|re.S)))}})
+        if not quality["is_article"]: return None, "; ".join(quality["reasons"])
         retrieved = datetime.now(timezone.utc).isoformat()
         return {"text": text, "score": 1.0 if trust == "official" else .9, "source_type": "web",
             "source_url": canonical, "source_title": title, "publisher": publisher, "domain": domain,
             "retrieved_at": retrieved, "publication_date": publication_date, "source_category": category, "trust_level": trust,
             "content_hash": hashlib.sha256(text.encode()).hexdigest(), "subject": None, "topic": None,
-            "metadata": {"headings": headings}}
+            "metadata": {"headings": headings, "paragraphs": paragraphs}, "article_quality": quality,
+            "search_rank": self._candidate_rank(candidate, question)}, None
+
+    @staticmethod
+    def page_type(url):
+        parsed = urlparse(url); path = parsed.path.casefold().rstrip("/")
+        if not path: return "homepage"
+        combined = path + "?" + parsed.query.casefold()
+        if any(term in combined for term in ("login", "signin", "sitemap", "search")): return "index"
+        index_names = ("/scripts/bs_pressreleasedisplay.aspx", "/allrelease.aspx", "/archive", "/index")
+        if any(path.endswith(name) for name in index_names) and not re.search(r"(?:prid|id|articleid)=\d+", parsed.query, re.I): return "index"
+        return "article"
+
+    @classmethod
+    def article_quality(cls, chunk):
+        text = re.sub(r"\s+", " ", chunk.get("text", "")).strip()
+        title = re.sub(r"\s+", " ", chunk.get("source_title", "")).strip()
+        metadata = chunk.get("metadata") or {}; paragraphs = metadata.get("paragraphs") or [p.strip() for p in chunk.get("text", "").splitlines() if len(p.strip()) >= 30]
+        page_type = cls.page_type(chunk.get("source_url", "")); reasons = []; score = 0.0
+        generic_title = not title or title.casefold() in {"home", "reserve bank of india", "press information bureau"} or len(title) < 12
+        unique_ratio = len(set(paragraphs)) / len(paragraphs) if paragraphs else 0.0
+        nav_ratio = float(metadata.get("link_text_length", 0)) / max(len(text), 1)
+        if page_type != "article": reasons.append(f"{page_type} URL is not an article")
+        if len(text) >= 700: score += .30
+        elif len(text) >= 350: score += .20
+        else: reasons.append("clean article body is shorter than 350 characters")
+        if not generic_title: score += .20
+        else: reasons.append("title is missing or generic")
+        if len(paragraphs) >= 3: score += .20
+        elif len(paragraphs) >= 2: score += .10
+        else: reasons.append("fewer than two substantive paragraphs")
+        if chunk.get("publication_date"): score += .15
+        else: reasons.append("publication date unavailable")
+        if unique_ratio >= .70: score += .10
+        else: reasons.append("duplicate boilerplate ratio is high")
+        if nav_ratio <= .50: score += .05
+        else: reasons.append("navigation-to-content ratio is high")
+        score = round(min(score, 1.0), 2)
+        is_article = page_type == "article" and not generic_title and len(text) >= 350 and len(paragraphs) >= 2 and unique_ratio >= .45 and nav_ratio <= 1.0 and score >= .55
+        return {"is_article": is_article, "quality_score": score, "reasons": reasons or ["article quality checks passed"], "page_type": page_type}
+
+    @classmethod
+    def _candidate_rank(cls, candidate, question):
+        url, title = candidate.get("url", ""), candidate.get("title", "")
+        score = 3 if cls.page_type(url) == "article" else -5
+        query_terms = {term for term in re.findall(r"[a-z]{4,}|\d{4}", question.casefold()) if term not in {"site", "india"}}
+        haystack = f"{title} {url}".casefold(); score += sum(term in haystack for term in query_terms)
+        if re.search(r"(?:prid|id|articleid)=\d+", url, re.I): score += 3
+        return score
 
     @staticmethod
     def _clean(value): return re.sub(r"\s+", " ", html_lib.unescape(re.sub(r"<.*?>", " ", value))).strip()

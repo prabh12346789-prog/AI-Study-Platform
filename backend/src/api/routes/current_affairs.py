@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 
 from src.core.config import settings
 from src.current_affairs.service import CurrentAffairsService
+from src.current_affairs.quiz_service import CurrentAffairsQuizService
 from src.schemas.current_affairs import ArticleResponse, CollectRequest, CollectResponse, DailyBriefResponse, DailyGenerateRequest
+from src.schemas.current_affairs_quiz import QuizCreate, QuizSubmission
 
 router = APIRouter()
 
 
 def service(): return CurrentAffairsService()
+def quiz_service(): return CurrentAffairsQuizService()
 def require_admin(x_internal_key: str | None = Header(default=None, alias="X-Internal-Key", description="Configured INTERNAL_ADMIN_KEY; never expose this in the student frontend.")):
     if not settings.INTERNAL_ADMIN_KEY: raise HTTPException(status_code=503, detail="Internal collection key is not configured")
     if x_internal_key != settings.INTERNAL_ADMIN_KEY: raise HTTPException(status_code=403, detail="Internal access required")
@@ -17,6 +20,57 @@ def require_admin(x_internal_key: str | None = Header(default=None, alias="X-Int
 
 def article_response(row, saved=False, opened=False):
     data = ArticleResponse.model_validate(row).model_dump(); data.update(saved=saved, opened=opened); return data
+
+def quiz_response(row, svc):
+    return {"id": row.id, "title": row.title, "period_type": row.period_type, "date_from": row.date_from,
+        "date_to": row.date_to, "question_count": row.question_count, "difficulty": row.difficulty,
+        "status": row.status, "article_ids_json": row.article_ids_json, "created_at": row.created_at,
+        "updated_at": row.updated_at, "questions": [{"id": q.id, "question_type": q.question_type,
+        "question": q.question, "options_json": q.options_json, "article_id": q.article_id,
+        "source_url": q.source_url, "subject": q.subject, "topic": q.topic, "difficulty": q.difficulty}
+        for q in svc.questions(row.id)]}
+
+def retention_response(row):
+    return {key: getattr(row, key) for key in ("id", "user_id", "article_id", "subject", "topic", "retention_score",
+        "correct_attempts", "incorrect_attempts", "recall_failures", "last_attempt_at", "last_revised_at",
+        "next_revision_at", "risk_level", "created_at", "updated_at")}
+
+@router.post("/quizzes")
+def create_quiz(payload: QuizCreate):
+    svc = quiz_service()
+    try: return quiz_response(svc.generate(payload), svc)
+    except ValueError as error: raise HTTPException(status_code=422, detail=str(error)) from error
+
+@router.get("/quizzes")
+def quizzes():
+    svc = quiz_service(); return [quiz_response(row, svc) for row in svc.list()]
+
+@router.get("/quizzes/{quiz_id}")
+def quiz(quiz_id: str):
+    svc = quiz_service(); row = svc.get(quiz_id)
+    if not row: raise HTTPException(status_code=404, detail="Current Affairs quiz not found")
+    return quiz_response(row, svc)
+
+@router.post("/quizzes/{quiz_id}/submit")
+def submit_quiz(quiz_id: str, payload: QuizSubmission):
+    try: return quiz_service().submit(quiz_id, payload.answers)
+    except ValueError as error: raise HTTPException(status_code=422, detail=str(error)) from error
+
+@router.get("/quizzes/{quiz_id}/attempts")
+def quiz_attempts(quiz_id: str): return [quiz_service()._attempt_result(row) for row in quiz_service().attempts(quiz_id)]
+
+@router.get("/retention")
+def retention(): return [retention_response(row) for row in quiz_service().retention()]
+
+@router.get("/retention/overview")
+def retention_overview():
+    data = quiz_service().overview(); data["high_risk_articles"] = [retention_response(row) for row in data["high_risk_articles"]]
+    data["due_for_revision"] = [retention_response(row) for row in data["due_for_revision"]]; return data
+
+@router.post("/retention/{article_id}/revise")
+def revise(article_id: str):
+    try: return retention_response(quiz_service().revise(article_id))
+    except ValueError as error: raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/collect", response_model=CollectResponse, summary="Collect trusted current affairs for a date")

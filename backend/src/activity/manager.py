@@ -13,10 +13,10 @@ SUPPORTED_EVENT_TYPES = {
     "revision_completed", "video_opened", "recommendation_accepted",
     "recommendation_skipped",
     "study_time_logged",
-    "community_post_created", "community_comment_created", "community_post_saved", "community_post_reported",
     "visual_roadmap_generated", "visual_roadmap_opened", "visual_roadmap_saved",
     "roadmap_quiz_started", "roadmap_quiz_completed",
     "current_affairs_opened", "current_affairs_saved", "daily_brief_completed",
+    "current_affairs_quiz_started", "current_affairs_quiz_completed", "current_affairs_revision_completed",
 }
 
 

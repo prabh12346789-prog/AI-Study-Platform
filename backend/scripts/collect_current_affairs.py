@@ -33,23 +33,38 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generate-brief", action="store_true")
     parser.add_argument("--language", choices=("english", "hindi", "punjabi"), default="english")
     parser.add_argument("--max-results", type=int, default=10, choices=range(1, 21), metavar="1-20")
+    parser.add_argument("--query", action="append", default=[], help="Override default discovery query; repeatable.")
+    parser.add_argument("--url", action="append", default=[], help="Ingest an allowlisted trusted URL directly; repeatable.")
     return parser
 
 
 async def run_collection(args, service=None):
     service = service or CurrentAffairsService()
     return await service.collect_for_date(args.date, max_results=args.max_results,
-        generate_brief=args.generate_brief, language=args.language)
+        generate_brief=args.generate_brief, language=args.language,
+        queries=getattr(args, "query", None) or None, urls=getattr(args, "url", None) or None)
 
 
 def print_summary(result):
+    for item in result.get("source_progress", []):
+        print(f"Source: {item.get('url')}")
+        print(f"  Page type: {item.get('page_type')} | Quality: {item.get('quality_score', 0):.2f}")
+        print(f"  Result: {item.get('status')} — {item.get('reason')}")
+        print(f"  Summarization: {item.get('summarization')}")
     print(f"Date: {result['date'].isoformat()}")
+    print(f"Search provider: {result.get('search_provider', 'unknown')}")
+    print(f"Queries executed: {len(result.get('queries_executed', []))}")
+    print(f"Raw results: {result.get('raw_results', 0)}")
+    print(f"Approved results: {result.get('approved_results', 0)}")
+    print(f"Rejected domains: {result.get('rejected_domains', 0)}")
+    print(f"Extraction failures: {result.get('extraction_failures', 0)}")
     print(f"Collected: {result['collected']}")
     print(f"Accepted: {result['accepted']}")
     print(f"Rejected: {result['rejected']}")
     print(f"Duplicates: {result['duplicates']}")
     print(f"Daily brief: {result['daily_brief']}")
     if result.get("collection_errors"): print("Collection errors: " + "; ".join(result["collection_errors"]))
+    if result.get("raw_results", 0) == 0: print("Zero-result reason: " + (result.get("zero_result_reason") or "no search matches"))
     if result.get("brief_error"): print("Brief error: " + result["brief_error"])
 
 

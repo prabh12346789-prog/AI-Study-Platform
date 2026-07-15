@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from src.db.base import Base
 from src.memory.models import Conversation, ConversationMessage  # noqa: F401
+from src.visual_roadmap.models import VisualRoadmap  # noqa: F401
+from src.current_affairs.models import CurrentAffairsArticle, DailyCurrentAffairsBrief, SavedCurrentAffairs  # noqa: F401
 
 _database_logged = False
 

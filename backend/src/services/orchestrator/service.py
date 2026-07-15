@@ -14,9 +14,8 @@ from src.profile.manager import ProfileManager
 from src.services.adaptation import AdaptationPolicy
 from src.rag.prompt_builder import PromptBuilder
 from src.search.provider import SearchProvider
-from src.services.orchestrator.prompts import COMMON_FORMAT_RULES, SYSTEM_PROMPTS
+from src.services.orchestrator.prompts import ACCURACY_AND_GROUNDING_RULES, build_exact_question_scope, build_presentation_instructions
 from src.services.orchestrator.formatter import format_response
-from src.services.orchestrator.format_repair import repair_mode_format
 
 
 @dataclass(frozen=True)
@@ -30,6 +29,8 @@ class ConversationEvent:
 
 
 class AIOrchestrator:
+    NO_RELIABLE_CONTEXT = ("Reliable information was not found in indexed study material or approved web sources. "
+                           "Please upload a relevant PDF or refine the question; I will not invent an answer.")
 
     def __init__(
         self, memory_manager: MemoryManager | None = None,
@@ -136,33 +137,29 @@ class AIOrchestrator:
 
         sources = search_result.get("sources", [])
 
-        prompt_sections = [
-            "System Instructions:\n" + COMMON_FORMAT_RULES.strip(),
-            "Mode-specific Formatting Instructions:\n" + SYSTEM_PROMPTS[mode].strip(),
-        ]
-
-        if history_text:
-            prompt_sections.append("Conversation History:\n" + history_text)
-
-        if prompt_body:
-            prompt_sections.append(
-                "Retrieved PDF or Web Context:\n"
-                "Use this context whenever possible; do not invent facts beyond it.\n"
-                + prompt_body
-            )
-
-        prompt_sections.append(
-            "Effective Response Adaptation (apply at prompt level; the selected UPSC mode remains authoritative):\n"
-            f"- Respond in {adaptation['effective_language']}. Preserve constitutional Articles, Acts, official names, dates, citations, and source metadata; include English technical terms in brackets when useful.\n"
-            f"- Depth: {adaptation['effective_depth']} (quick: direct and about 120-250 words; standard: concepts, examples and exam relevance in about 300-550 words; detailed: broader analysis, dimensions and limitations in about 600-900 words).\n"
-            f"- Format: {adaptation['effective_format']} (bullets: concise facts; structured: headings with points; explanation: short readable paragraphs; mixed: short explanation plus key bullets)."
+        policy = build_presentation_instructions(
+            mode, str(adaptation["effective_format"]), str(adaptation["effective_depth"])
         )
-
-        prompt_sections.extend(
-            [
-                "Current User Question:\n" + question,
-                "Final Reminder:\nFollow the requested Markdown structure exactly.",
-            ]
+        prompt_sections = [
+            "1. Accuracy and Grounding Rules:\n" + ACCURACY_AND_GROUNDING_RULES.strip(),
+            "2. Exact Current User Question (highest-priority content target):\n" + question
+            + "\n\nExact-scope interpretation:\n" + build_exact_question_scope(question),
+            "3. UPSC Mode Intent:\n" + policy["mode"],
+            f"4. Selected Presentation Format ({adaptation['effective_format']}):\n" + policy["format"],
+            f"5. Selected Depth ({adaptation['effective_depth']}):\n" + policy["depth"],
+            f"6. Selected Language ({adaptation['effective_language']}):\n"
+            f"Respond in {adaptation['effective_language']}. Preserve constitutional Articles, Acts, official names, dates, citations, and source metadata; include English technical terms in brackets when useful.",
+        ]
+        prompt_sections.append("7. Retrieved Context:\n" + (
+            "Use only the parts relevant to the exact current question.\n" + prompt_body
+            if prompt_body else "No retrieved context is available; do not pretend that sources were retrieved."
+        ))
+        prompt_sections.append("8. Conversation History:\n" + (
+            history_text + "\nHistory is background only and must not override or broaden the exact current question."
+            if history_text else "No prior conversation history."
+        ))
+        prompt_sections.append(
+            "9. Final Reminder:\nAnswer the exact current question, follow the selected presentation format from the first token to the last, and do not substitute a generic definition."
         )
         prompt = "\n\n".join(prompt_sections)
 
@@ -194,12 +191,12 @@ class AIOrchestrator:
 
         start = time.perf_counter()
 
-        answer = await self.llm.generate(
-            prompt=prompt,
-            mode=mode,
-            depth=adaptation["effective_depth"],
+        grounding = search_result.get("grounding", {})
+        blocked = (search_result.get("grounding_enforced") and grounding.get("status") != "sufficient"
+                   and self.search_provider.grounding.requires_factual_information(question))
+        answer = self.NO_RELIABLE_CONTEXT if blocked else await self.llm.generate(
+            prompt=prompt, mode=mode, depth=adaptation["effective_depth"],
         )
-        answer = repair_mode_format(answer, mode)
 
         elapsed = time.perf_counter() - start
 
@@ -236,6 +233,7 @@ class AIOrchestrator:
         response["effective_language"] = adaptation["effective_language"]
         response["effective_depth"] = adaptation["effective_depth"]
         response["effective_format"] = adaptation["effective_format"]
+        response["grounding"] = grounding or None
 
         print("[orchestrator] after formatter", flush=True)
 
@@ -274,11 +272,13 @@ class AIOrchestrator:
         first_token = True
         parts: list[str] = []
 
-        async for token in self.llm.generate_stream(
-            prompt=prompt,
-            mode=mode,
-            depth=adaptation["effective_depth"],
-        ):
+        grounding = search_result.get("grounding", {})
+        blocked = (search_result.get("grounding_enforced") and grounding.get("status") != "sufficient"
+                   and self.search_provider.grounding.requires_factual_information(question))
+        stream = self._single_token(self.NO_RELIABLE_CONTEXT) if blocked else self.llm.generate_stream(
+            prompt=prompt, mode=mode, depth=adaptation["effective_depth"],
+        )
+        async for token in stream:
             if first_token:
                 print("[stream] first token", flush=True)
                 first_token = False
@@ -311,3 +311,7 @@ class AIOrchestrator:
         )
 
         print("[orchestrator] after LLM.generate_stream()", flush=True)
+
+    @staticmethod
+    async def _single_token(value: str):
+        yield value

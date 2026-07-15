@@ -5,6 +5,8 @@ import { ProfilePanel } from './ProfilePanel'
 import { MentorDashboard } from './MentorDashboard'
 import { VideoRecommendations } from './VideoRecommendations'
 import { CommunityPage } from './CommunityPage'
+import { VisualLearningPage } from './VisualLearningPage'
+import { CurrentAffairsPage } from './CurrentAffairsPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
 import {
   API_BASE_URL,
@@ -58,7 +60,7 @@ function initialAssistantMessage(): Message {
 }
 
 export default function App() {
-  const [page, setPage] = useState<'dashboard' | 'chat' | 'community'>('dashboard')
+  const [page, setPage] = useState<'dashboard' | 'chat' | 'community' | 'visual' | 'current_affairs'>('dashboard')
   const [messages, setMessages] = useState<Message[]>([initialAssistantMessage()])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -263,6 +265,11 @@ export default function App() {
     }
   }
 
+  function askFromRoadmap(text: string) {
+    setQuestion(text)
+    setPage('chat')
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -302,7 +309,7 @@ export default function App() {
         <button className="new-chat" onClick={() => void newChat()}>
           <span>＋</span> New test chat
         </button>
-        <nav className="app-navigation" aria-label="Main navigation"><button className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}>Dashboard</button><button className={page === 'chat' ? 'active' : ''} onClick={() => setPage('chat')}>Chat</button><button className={page === 'community' ? 'active' : ''} onClick={() => setPage('community')}>Community</button></nav>
+        <nav className="app-navigation" aria-label="Main navigation"><button className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}>Dashboard</button><button className={page === 'chat' ? 'active' : ''} onClick={() => setPage('chat')}>Chat</button><button className={page === 'current_affairs' ? 'active' : ''} onClick={() => setPage('current_affairs')}>Current Affairs</button><button className={page === 'visual' ? 'active' : ''} onClick={() => setPage('visual')}>Visual Learning</button><button className={page === 'community' ? 'active' : ''} onClick={() => setPage('community')}>Community</button></nav>
 
         <section className="side-section">
           <p className="eyebrow">Conversations</p>
@@ -355,6 +362,8 @@ export default function App() {
 
       <section className={`workspace ${page}`} ref={workspaceRef} onScroll={handleWorkspaceScroll}>
         {page === 'community' && <CommunityPage />}
+        {page === 'visual' && <VisualLearningPage onAsk={askFromRoadmap} />}
+        {page === 'current_affairs' && <CurrentAffairsPage />}
         {page === 'dashboard' && <div className="dashboard-page">
           <header className="topbar dashboard-topbar"><div><p className="eyebrow">Mentor overview</p><h1>Your study dashboard</h1><small>Progress, next actions, revision risk, and learning preferences.</small></div><button className="send-button" onClick={() => setPage('chat')}>Open Chat</button></header>
           <MentorDashboard trackingActive={trackingActive} />

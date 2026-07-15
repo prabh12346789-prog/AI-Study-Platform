@@ -18,6 +18,7 @@ export function MasteryOverview() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { const listener = () => void refresh(); window.addEventListener('mentor-data-changed', listener); return () => window.removeEventListener('mentor-data-changed', listener) }, [refresh])
   const subjects = useMemo(() => [...new Set(topics.map(item => item.subject))], [topics])
   const filtered = topics.filter(item => (subject === 'all' || item.subject === subject) && (risk === 'all' || item.risk_level === risk))
   async function reset(item: TopicMastery) {

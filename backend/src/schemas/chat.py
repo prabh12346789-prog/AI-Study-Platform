@@ -58,3 +58,4 @@ class ChatResponse(BaseModel):
     effective_language: str | None = None
     effective_depth: str | None = None
     effective_format: str | None = None
+    grounding: dict | None = None

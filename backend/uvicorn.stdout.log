@@ -2781,4 +2781,101 @@ LLM Generation Time: 36.21 seconds
 INFO:     127.0.0.1:49473 - "GET /conversations HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52586 - "POST /activity/events HTTP/1.1" 201 Created
 INFO:     127.0.0.1:62533 - "POST /activity/events HTTP/1.1" 201 Created
- 
+ INFO:     127.0.0.1:54985 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57497 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62808 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58159 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54985 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54969 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54985 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62808 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54985 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54969 - "GET /profile/insights HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54985 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57497 - "GET /mentor/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54985 - "GET /videos/recommendations?subject=Polity+and+Governance&topic=Fundamental+Rights&max_duration_seconds=1800 HTTP/1.1" 200 OK
+ INFO:     127.0.0.1:53733 - "OPTIONS /chat/stream HTTP/1.1" 200 OK
+[chat] stream request received: question='what are DPSPs', mode=<ResponseMode.LEARN: 'learn'>
+INFO:     127.0.0.1:53733 - "POST /chat/stream HTTP/1.1" 200 OK
+[startup] First chat request: initializing Ollama/provider and retrieval services
+[orchestrator] process_stream() entry: question='what are DPSPs', mode=<ResponseMode.LEARN: 'learn'>
+[stream] started
+[orchestrator] before SearchProvider.search()
+[search-provider] search start: question='what are DPSPs'
+[search-provider] strategy=local_first -> LocalSearch
+[local-search] start: question='what are DPSPs'
+[local-search] before Retriever.retrieve()
+[local-search] after Retriever.retrieve(): chunks=0
+[local-search] finished with 0 chunks
+[search-provider] local search empty -> WebSearch
+[web-search] start: question='what are DPSPs'
+[web-search] end: results=0
+[search-provider] search finished: provider='local', context_present=False
+[orchestrator] after SearchProvider.search(): provider='local', sources=0
+[orchestrator] before PromptBuilder.build_prompt()
+[orchestrator] after PromptBuilder.build_prompt()
+================================================================================
+PROMPT LENGTH: 1668
+================================================================================
+System Instructions:
+STRICT FORMATTING RULES:
+
+- Return the answer in Markdown.
+- Use the exact headings required by the selected mode.
+- Use bullet points under every heading; every bullet must begin with "- ".
+- Do not write long continuous paragraphs.
+- Keep every bullet concise and focused on one main fact.
+- Use bold text for Articles, Acts, years, institutions, and key terms.
+- Do not add unnecessary introductions.
+- Do not repeat the question.
+- Do not invent constitutional provisions or factual details.
+
+Mode-specific Formatting Instructions:
+Explain the topic for UPSC learning.
+
+Use exactly this structure:
+
+## Definition
+- Give a simple definition.
+
+## Explanation
+- Explain the concept using short bullet points.
+
+## Example
+- Give one relevant example.
+
+## Importance
+- Explain why it matters.
+
+## UPSC Relevance
+- Mention relevant paper, syllabus area, Articles, Acts or topics.
+
+Maximum 220 words.
+
+Effective Response Adaptation (apply at prompt level; the selected UPSC mode remains authoritative):
+- Respond in english. Preserve constitutional Articles, Acts, official names, dates, citations, and source metadata; include English technical terms in brackets when useful.
+- Depth: standard (quick: direct and about 120-250 words; standard: concepts, examples and exam relevance in about 300-550 words; detailed: broader analysis, dimensions and limitations in about 600-900 words).
+- Format: mixed (bullets: concise facts; structured: headings with points; explanation: short readable paragraphs; mixed: short explanation plus key bullets).
+
+Current User Question:
+what are DPSPs
+
+Final Reminder:
+Follow the requested Markdown structure exactly.
+================================================================================
+[orchestrator] before LLM.generate_stream()
+==============================
+Generation Profile
+
+Mode: ResponseMode.LEARN
+Temperature: 0.3
+Top P: 0.9
+Max Tokens: 650
+==============================
+[stream] first token
+[stream] finished
+LLM Generation Time: 34.20 seconds
+[orchestrator] after LLM.generate_stream()
+INFO:     127.0.0.1:53733 - "GET /conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57036 - "OPTIONS /activity/events HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57036 - "POST /activity/events HTTP/1.1" 201 Created

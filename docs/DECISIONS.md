@@ -87,3 +87,35 @@
 - Reason: A small event store provides an auditable foundation for later mentor analytics without prematurely adding inference or aggregation.
 - Trade-off: Clients must supply consent and a stable event taxonomy; subject/topic/time summaries are intentionally deferred.
 - Status: Accepted
+
+## Roadmap-derived recall quizzes
+
+- Date: 2026-07-15
+- Decision: Generate and score recall quizzes deterministically from validated persisted roadmap JSON, with no additional LLM call, and treat one persisted quiz attempt as the submission idempotency boundary.
+- Reason: Quiz facts and distractors must remain auditable against the roadmap while repeated submission must never duplicate mastery evidence.
+- Trade-off: Question variety is constrained by available roadmap nodes; short or sparse roadmaps are rejected instead of being supplemented with invented content.
+- Status: Accepted
+
+## Mode and presentation separation
+
+- Date: 2026-07-15
+- Decision: Treat UPSC mode as purpose/exam orientation and the resolved answer format as the independent presentation contract, enforced through one shared normal/streaming prompt policy with no post-generation repair.
+- Reason: Fixed mode templates overrode learner-selected presentation and sometimes displaced the exact current question with a generic topic.
+- Trade-off: Local-model adherence remains probabilistic; strict formatting is still postponed and factual reliability depends on relevant grounding.
+- Status: Accepted
+
+## Grounding and trusted web fallback
+
+- Date: 2026-07-15
+- Decision: Apply one shared heuristic grounding decision to PDF-first chat and stricter visual-roadmap retrieval, and permit fallback only to manually allowlisted web publishers with explicit provenance and freshness-aware caching.
+- Reason: Nonempty or highly ranked context is not necessarily relevant or trustworthy, while ungrounded local generation produced factual errors.
+- Trade-off: The conservative allowlist and lightweight extraction reduce coverage, and confidence is an explainable threshold signal rather than a scientific probability.
+- Status: Accepted
+
+## Current Affairs Phase 1
+
+- Date: 2026-07-15
+- Decision: Build current affairs over the existing trusted web policy, persist grounded UPSC summaries and deterministic daily briefs, and index accepted summaries in the existing RAG collection with explicit current-affairs provenance.
+- Reason: Learners need reusable, source-transparent daily material that chat can retrieve without duplicating search or allowing reading activity to inflate mastery.
+- Trade-off: Collection is conservative and internal/manual in Phase 1; extraction limits coverage, and scheduling, notifications, quizzes, payments, and institutional analytics remain out of scope.
+- Status: Accepted

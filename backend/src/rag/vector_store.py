@@ -122,6 +122,23 @@ class VectorStore:
 
 		return results
 
+	def store_current_affairs(self, article_id: str, chunks: Sequence[dict], embeddings: Sequence[Sequence[float]]):
+		if len(chunks) != len(embeddings):
+			raise ValueError("Chunks and embeddings must have the same length")
+		ids, documents, metadatas = [], [], []
+		for index, (chunk, _embedding) in enumerate(zip(chunks, embeddings)):
+			ids.append(f"current_affairs_{article_id}_{index}"); documents.append(chunk["text"])
+			metadatas.append({key: value for key, value in {
+				"source_type": "current_affairs", "article_id": article_id, "document_id": article_id,
+				"original_name": chunk.get("title"), "chunk_id": index, "publisher": chunk.get("publisher"),
+				"source_url": chunk.get("source_url"), "publication_date": chunk.get("publication_date") or "",
+				"subject": chunk.get("subject"), "topic": chunk.get("topic"), "retrieved_at": chunk.get("retrieved_at"),
+				"content_hash": chunk.get("content_hash"), "word_count": len(chunk["text"].split()),
+				"embedding_model": settings.EMBEDDING_MODEL,
+			}.items() if value is not None})
+		self.collection.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+		return ids
+
 	def query(self, query_embeddings, n_results: int = 5):
 
 		return self.collection.query(

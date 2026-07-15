@@ -94,6 +94,16 @@ export interface ConversationMessage { id: number; conversation_id: string; role
 export interface CommunityGroup { id: string; name: string; slug: string; description: string; subject: string }
 export interface CommunityPost { id: string; user_id: string; group_id: string; group_name: string; subject: string; title: string; content: string; language: string; source_url: string | null; display_name: string; comment_count: number; saved: boolean; created_at: string }
 export interface CommunityComment { id: string; user_id: string; post_id: string; content: string; created_at: string }
+export type VisualType = 'timeline' | 'flowchart' | 'concept_map' | 'comparison' | 'process' | 'cause_effect'
+export interface RoadmapSource { id: string; source_type: 'pdf' | 'web'; document: string | null; title: string | null; url: string | null; publisher: string | null; domain: string | null; retrieved_at: string | null; source_category: string | null; trust_level: string | null; page_start: number | null; page_end: number | null; chunk_id: string | null }
+export interface VisualRoadmap { id: string; status: string; title: string; subject: string; topic: string; visual_type: VisualType; language: string; conversation_id: string | null; svg_url: string; created_at: string; updated_at: string; sources: RoadmapSource[]; structure: { title: string; summary: string; visual_type: VisualType; nodes: Array<{ id: string; label: string; description: string; source_ids: string[] }>; connections: Array<{ from: string; to: string; label: string }>; exam_points: string[]; sources: RoadmapSource[] } }
+export interface RoadmapQuizQuestion { id: string; roadmap_id: string; question_type: 'mcq' | 'sequence' | 'match_year' | 'true_false' | 'short_recall'; question: string; options: string[]; correct_answer: string; explanation: string; source_node_ids: string[]; difficulty: 'easy' | 'standard' | 'difficult' }
+export interface RoadmapQuiz { id: string; roadmap_id: string; difficulty: string; questions: RoadmapQuizQuestion[] }
+export interface RoadmapQuizResult { score: number; total: number; percentage: number; correct_answers: QuizAnswerResult[]; incorrect_answers: QuizAnswerResult[]; explanations: string[]; weak_source_nodes: string[] }
+export interface QuizAnswerResult { question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; source_node_ids: string[] }
+export interface CurrentAffairsArticle { id: string; title: string; summary: string; source_title: string; publisher: string; source_url: string; source_type: string; publication_date: string | null; retrieved_at: string; subject: string; topic: string; syllabus_tags_json: string[]; importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string; saved: boolean; opened: boolean }
+export interface CurrentAffairsBrief { id: string; brief_date: string; language: string; title: string; overview: string; article_ids_json: string[]; subject_breakdown_json: Record<string, string[]>; prelims_points_json: string[]; mains_points_json: string[]; updated_at: string }
+export interface CurrentAffairsSummary { unread_important_stories: number; top_subject: string | null; saved_articles: number; daily_brief_completed: boolean }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -331,5 +341,29 @@ export const createCommunityComment = (id: string, content: string) => community
 export const deleteCommunityComment = (id: string) => communityRequest<void>(`/comments/${id}`, { method: 'DELETE' })
 export const saveCommunityPost = (id: string, saved: boolean) => communityRequest<void>(`/posts/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
 export const reportCommunityPost = (id: string, reason: string, details?: string) => communityRequest<void>('/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_type: 'post', target_id: id, reason, details }) })
+
+async function roadmapRequest<T>(path = '', init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/visual-roadmaps${path}`, init)
+  if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string | { message?: string } } | null; const detail = typeof body?.detail === 'object' ? body.detail.message : body?.detail; throw new Error(detail || `Visual roadmap request failed (${response.status})`) }
+  return response.status === 204 ? undefined as T : response.json()
+}
+export const createVisualRoadmap = (input: { topic: string; visual_type: VisualType; language: string; conversation_id?: string }) => roadmapRequest<VisualRoadmap>('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+export const listVisualRoadmaps = () => roadmapRequest<VisualRoadmap[]>()
+export const deleteVisualRoadmap = (id: string) => roadmapRequest<void>(`/${id}`, { method: 'DELETE' })
+export const saveVisualRoadmap = (id: string) => roadmapRequest<void>(`/${id}/save`, { method: 'POST' })
+export const createRoadmapQuiz = (id: string, question_count = 5, difficulty = 'standard') => roadmapRequest<RoadmapQuiz>(`/${id}/quiz`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question_count, difficulty }) })
+export const getRoadmapQuiz = (id: string) => roadmapRequest<RoadmapQuiz>(`/${id}/quiz`)
+export const submitRoadmapQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => roadmapRequest<RoadmapQuizResult>(`/${id}/quiz/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
+
+async function currentAffairsRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/current-affairs${path}`, init)
+  if (!response.ok) throw new Error(`Current affairs request failed (${response.status}): ${await response.text()}`)
+  return response.status === 204 ? undefined as T : response.json()
+}
+export const getCurrentAffairsArticles = (params = '') => currentAffairsRequest<CurrentAffairsArticle[]>(`/articles${params ? `?${params}` : ''}`)
+export const getCurrentAffairsArticle = (id: string) => currentAffairsRequest<CurrentAffairsArticle>(`/articles/${id}`)
+export const getCurrentAffairsBrief = (date: string) => currentAffairsRequest<CurrentAffairsBrief>(`/daily?date=${encodeURIComponent(date)}`)
+export const saveCurrentAffairsArticle = (id: string, saved: boolean) => currentAffairsRequest<void>(`/articles/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
+export const getCurrentAffairsSummary = () => currentAffairsRequest<CurrentAffairsSummary>('/summary')
 
 export { API_BASE_URL }

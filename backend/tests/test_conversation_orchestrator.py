@@ -23,6 +23,7 @@ class FakeLlm:
         return "## Answer\nFinal answer"
 
     async def generate_stream(self, prompt, mode, depth="standard"):
+        self.prompts.append(prompt)
         yield "## Answer\n"
         yield "Final answer"
 
@@ -144,13 +145,13 @@ def test_chat_loads_profile_and_request_preferences_override_it(tmp_path):
     })
     asyncio.run(service.process("Explain Parliament", ResponseMode.LEARN))
     assert "Respond in hindi" in service.llm.prompts[-1]
-    assert "Depth: detailed" in service.llm.prompts[-1]
+    assert "Selected Depth (detailed)" in service.llm.prompts[-1]
 
     asyncio.run(service.process(
         "Explain Parliament", ResponseMode.LEARN,
         preferred_language="english", preferred_depth="quick", preferred_format="bullets",
     ))
     assert "Respond in english" in service.llm.prompts[-1]
-    assert "Depth: quick" in service.llm.prompts[-1]
-    assert "Format: bullets" in service.llm.prompts[-1]
+    assert "Selected Depth (quick)" in service.llm.prompts[-1]
+    assert "Selected Presentation Format (bullets)" in service.llm.prompts[-1]
     assert service.profile_manager.get_or_create().preferred_language == "hindi"

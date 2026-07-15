@@ -51,6 +51,15 @@ class Retriever:
                     "metadata": {
                         "page_start": metadata.get("page_start"),
                         "page_end": metadata.get("page_end"),
+                        "source_type": metadata.get("source_type", "pdf"),
+                        "article_id": metadata.get("article_id"),
+                        "publisher": metadata.get("publisher"),
+                        "source_url": metadata.get("source_url"),
+                        "publication_date": metadata.get("publication_date"),
+                        "subject": metadata.get("subject"),
+                        "topic": metadata.get("topic"),
+                        "retrieved_at": metadata.get("retrieved_at"),
+                        "content_hash": metadata.get("content_hash"),
                     },
                 }
             )

@@ -74,6 +74,29 @@ UPSC AI Mentor Agent is a local-first study mentor, not a generic chatbot. Its i
 - End-to-end stabilization passes 41 connected journey tests followed by the full 65-test backend regression and frontend production build. The only failure found was an order-dependent health test, corrected to verify that health reporting observes—but never initializes—shared embedding/vector state.
 - Chat SSE now emits conversation/settings metadata before retrieval, forwards each Ollama delta as a named token event, ends with a non-visible done event, and persists the assistant response once only after successful completion. The frontend parses split SSE event blocks incrementally and batches visible deltas for 45 ms, with preparation/retrieval/generation status text and reader-safe scrolling. Live Ollama validation produced 181 cold and 196 warm chunks; first-token time measured 18.41 seconds cold and 2.27 seconds warm.
 - A development-only, idempotent demo fixture at `backend/scripts/seed_demo.py` creates `backend/data/demo.sqlite3` with a strong topic, weak/high-risk evidence, completed revision, quiz mistakes, mentor action, trusted video match, and two community posts; production startup never invokes it.
+- Visual Learning Mode creates source-grounded timeline, flowchart, concept-map, comparison, process, and cause-and-effect roadmaps from retrieved study material through the existing local Ollama and RAG boundaries.
+- `VisualRoadmap` persists ownership, optional conversation linkage, classification, type/language/status, validated structure, source metadata, and generated-file paths. SVG, JSON, source, and animation-ready metadata files remain outside SQLite under `backend/generated/users/<user>/roadmaps/<id>/`.
+- A strict Pydantic schema limits output to twelve concise nodes, unique IDs, valid connections, and retrieved source IDs. Insufficient context fails clearly; one JSON-only repair attempt may fix structure without a second factual pass.
+- A deterministic dependency-free SVG renderer provides accessible titles/descriptions, wrapped educational cards, source markers, UPSC exam points, and layouts for all six types.
+- Create/list/filter/detail/SVG/save/delete APIs are connected to a responsive Visual Learning page with real stages, history/empty/error states, zoom/fit/pan, source review, download/regenerate/delete/question actions, and disabled quiz/animation actions.
+- Generated/opened/saved activity is recorded with roadmap, classification, visual type, and language metadata and never becomes mastery evidence. Targeted roadmap, activity, and conversation tests and the frontend production build pass; animation remains future work.
+- Roadmap-derived recall quizzes deterministically create up to ten MCQ, chronology, year-matching, and true/false questions using only validated saved roadmap fields; the default is five and timeline quizzes always begin with a chronology question when sufficient nodes exist.
+- Quiz creation and retrieval do not affect mastery. Idempotent submission scores the saved quiz, returns explanations and weak source nodes, records started/completed activity, and creates one `quiz_correct` or `quiz_incorrect` mastery evidence item per answer without duplicating evidence on repeated submission.
+- The Visual Learning viewer now includes an enabled recall quiz panel with progress, previous/next controls, ordering and option inputs, submission states, result review, weak roadmap sections, retake, and return actions. Completed attempts refresh Mastery Overview and Mentor Dashboard data. Twenty targeted quiz, roadmap, mastery, and activity tests pass; the frontend production build passes.
+- Answer presentation now separates UPSC mode purpose from bullets, structured, explanation, and mixed layout contracts. The fixed Learn Definition/Explanation template and normal-only mode repair call were removed, so normal and streaming generation share one prompt policy and resolved format metadata.
+- Chat prompts now prioritize accuracy and grounding, the exact current question and its limiting phrases, mode intent, presentation format, depth, language, relevant retrieved context, and finally non-authoritative conversation history. Historical-background questions explicitly retain constitutional-development chronology rather than collapsing into a generic Constitution definition.
+- Seventeen targeted adaptation, prompt, conversation, and async-flow tests pass, and the frontend production build passes. Live local-model checks confirmed distinct bullets/structured/explanation behavior and topic relevance; mixed-format opening-paragraph compliance and ungrounded factual reliability remain model limitations, so strict formatting remains postponed.
+- A shared `GroundingDecisionService` now classifies local or trusted-web context as sufficient, insufficient, or absent using configurable chat and stricter roadmap thresholds; confidence is a transparent heuristic rather than scientific precision.
+- Local PDFs are evaluated first. Factual chat or roadmap requests use web fallback only when local grounding is insufficient and web search is enabled; casual/rewrite requests, sufficiently grounded PDFs, and local-only configuration do not trigger web retrieval. Missing trusted context returns a clear non-invented response for chat and rejects roadmap generation.
+- Trusted web fallback accepts only manually allowlisted official government, legislative, judicial, regulatory, recognized international, and approved reference domains. Approved pages retain publisher, canonical URL, category, trust level, retrieval/publication dates, relevant headings/text, content hash, subject/topic, and explicit `source_type=web`; unknown publishers and suspicious redirects are rejected.
+- Web chunks use a separate file cache keyed by canonical URL/content hash, with 30-day stable and 24-hour changing-information defaults. PDF and web provenance remain visible in API sources and Visual Learning labels, including safe open-source links and a fallback notice.
+- Thirty-one targeted grounding/search, RAG-facing roadmap, chat, adaptation, and progressive streaming tests pass across the focused runs. The frontend production build passes.
+- Current Affairs Phase 1 persists trusted articles, deterministic language/date briefs, and user-isolated saved articles. Records retain grounded UPSC summaries, publisher/canonical source, dates, taxonomy, syllabus tags, importance, Prelims/Mains relevance, content hash, and active/archived/rejected status.
+- Collection reuses the existing allowlisted web search and local model. Only sufficiently extracted approved-source text is summarized, URL/hash duplicates are reused, rejected items stay out of the learner feed, and collection/brief generation require a configured internal admin key.
+- Accepted summaries are indexed in the existing Chroma collection with explicit `source_type=current_affairs`, article, title, publisher, URL, publication date, subject/topic, retrieval time, and hash metadata. Existing chat retrieval can cite stored weekly or subject-specific developments.
+- Daily briefs deterministically aggregate accepted summaries into ranked stories, subject groups, Prelims facts, and Mains themes without another model call. Open/save/brief activity never creates mastery evidence.
+- The responsive Current Affairs page provides real date/search/subject/importance filtering, daily briefs, subject-grouped cards, details, save and safe source actions, plus loading/empty/error states. Mentor Dashboard adds a compact unread/top-subject/saved/brief-status card.
+- Forty-two targeted current-affairs, grounding/RAG, activity, mastery, mentor, chat, and roadmap tests pass; the frontend production build passes. Current-affairs quizzes, notifications, payments, and advanced institutional analytics are not implemented.
 
 ## Partially completed features
 
@@ -90,11 +113,11 @@ No automated backend or build blocker. Final interactive browser clicking and co
 
 ## Current task
 
-Chat streaming speed and progressive rendering — completed and tested.
+Current Affairs Phase 1 — completed and tested.
 
 ## Exact next task
 
-No next feature is selected; define a new milestone only when explicitly requested.
+No next feature is selected. Current-affairs quizzes, scheduling/notifications, and roadmap animation remain future work and must begin only when requested.
 
 ## Relevant endpoints
 
@@ -153,6 +176,24 @@ No next feature is selected; define a new milestone only when explicitly request
 - `DELETE /community/posts/{post_id}/save`
 - `GET /community/saved`
 - `POST /community/reports`
+- `POST /visual-roadmaps`
+- `GET /visual-roadmaps`
+- `GET /visual-roadmaps/{id}`
+- `GET /visual-roadmaps/{id}/svg`
+- `POST /visual-roadmaps/{id}/save`
+- `DELETE /visual-roadmaps/{id}`
+- `POST /visual-roadmaps/{id}/quiz`
+- `GET /visual-roadmaps/{id}/quiz`
+- `POST /visual-roadmaps/{id}/quiz/submit`
+- `POST /current-affairs/collect`
+- `GET /current-affairs/articles`
+- `GET /current-affairs/articles/{id}`
+- `GET /current-affairs/daily`
+- `POST /current-affairs/daily/generate`
+- `POST /current-affairs/articles/{id}/save`
+- `DELETE /current-affairs/articles/{id}/save`
+- `GET /current-affairs/saved`
+- `GET /current-affairs/summary`
 
 ## Known limitations
 
@@ -169,6 +210,10 @@ No next feature is selected; define a new milestone only when explicitly request
 - The video catalog is deliberately small and manually curated; links are not scraped, downloaded, or automatically freshness-checked.
 - No translation API, second LLM call, or current-affairs work is included.
 - Community has no private messaging, live or voice rooms, advanced moderation dashboard, AI summaries/translation, educator verification, rankings, followers, or reputation system.
+- Visual roadmaps require relevant indexed material and produce SVG only. Recall quizzes are intentionally limited to saved roadmap content; short-recall question generation is reserved by the schema but not prioritized in the current deterministic generator. Animation is not implemented.
+- Presentation is prompt-guided rather than deterministically repaired. The local 3B model can still miss part of a mixed-format contract or state inaccurate facts when no relevant retrieved material is available; high-stakes factual answers require grounded sources and review.
+- Trusted web extraction is deliberately lightweight and allowlist-based. It does not execute JavaScript, bypass access controls, or guarantee coverage of every official site; pages that cannot provide clean relevant text are rejected.
+- Current-affairs coverage depends on approved pages exposing sufficient server-rendered text and usable dates. JavaScript-only, blocked, malformed, or thin pages are rejected; Phase 1 has no scheduler, notifications, quizzes, or advanced analytics.
 
 ## Test commands
 

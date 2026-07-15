@@ -1,0 +1,32 @@
+import { useMemo, useState } from 'react'
+import { BookOpen, BrainCircuit, FileText, Menu, MessageSquarePlus, Newspaper, PanelRightOpen, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react'
+import type { AppPage } from './AppShell'
+import type { Conversation } from './api'
+
+export function ConversationRail({ conversations, activeId, onNew, onSelect, onRename, onDelete }: {
+  conversations: Conversation[]; activeId: string | null; onNew: () => void; onSelect: (id: string) => void; onRename: (item: Conversation) => void; onDelete: (id: string) => void
+}) {
+  const [search, setSearch] = useState(''); const [open, setOpen] = useState(false)
+  const filtered = useMemo(() => conversations.filter(item => item.title.toLowerCase().includes(search.toLowerCase())), [conversations, search])
+  return <><button className="chat-drawer-trigger conversations-trigger" onClick={() => setOpen(true)}><Menu size={16} /> Conversations</button>{open && <button className="chat-panel-backdrop" aria-label="Close conversations" onClick={() => setOpen(false)} />}<aside className={`conversation-rail ${open ? 'open' : ''}`}><header><div><p className="eyebrow">Study sessions</p><strong>Conversations</strong></div><button className="chat-panel-close" aria-label="Close conversations" onClick={() => setOpen(false)}><X size={16} /></button></header><button className="new-conversation" onClick={() => { onNew(); setOpen(false) }}><MessageSquarePlus size={16} /> New Chat</button><label className="conversation-search"><Search size={14} /><input aria-label="Search conversations" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search history" /></label><div className="conversation-list">{filtered.map(item => <article key={item.id} className={item.id === activeId ? 'active' : ''}><button className="conversation-title" title={item.title} aria-pressed={item.id === activeId} onClick={() => { onSelect(item.id); setOpen(false) }}>{item.title}</button><div><button aria-label={`Rename ${item.title}`} onClick={() => onRename(item)}><Pencil size={13} /></button><button aria-label={`Delete ${item.title}`} onClick={() => onDelete(item.id)}><Trash2 size={13} /></button></div></article>)}{!filtered.length && <p className="rail-empty">No matching conversations.</p>}</div></aside></>
+}
+
+export function AssistantPanel({ subject, topic, uploadState, onNavigate, onUpload, onQuestion }: {
+  subject: string | null; topic: string | null; uploadState: string; onNavigate: (page: AppPage) => void; onUpload: () => void; onQuestion: (question: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const focus = topic ?? subject
+  const questions = focus ? [`Explain ${focus} for UPSC Mains.`, `Give me Prelims facts on ${focus}.`, `What are the common misconceptions about ${focus}?`] : ['Explain Article 32 for UPSC Mains.', 'Compare inflation types with Indian examples.', 'Create a Prelims revision checklist for modern history.']
+  return <><button className="chat-drawer-trigger assistant-trigger" onClick={() => setOpen(true)}><PanelRightOpen size={16} /> Assistant</button>{open && <button className="chat-panel-backdrop" aria-label="Close assistant panel" onClick={() => setOpen(false)} />}<aside className={`assistant-panel ${open ? 'open' : ''}`}><header><div><p className="eyebrow">Study context</p><strong>{focus ?? 'UPSC preparation'}</strong></div><button className="chat-panel-close" aria-label="Close assistant panel" onClick={() => setOpen(false)}><X size={16} /></button></header><section><h3>Suggested questions</h3>{questions.map(question => <button className="suggested-question" key={question} onClick={() => { onQuestion(question); setOpen(false) }}>{question}</button>)}</section><section><h3>Quick actions</h3><div className="assistant-actions"><button onClick={() => onNavigate('visual')}><BrainCircuit size={15} /> Generate Visual Roadmap</button><button onClick={() => onNavigate('current_affairs')}><Newspaper size={15} /> Open Current Affairs</button><button onClick={() => onNavigate('progress')}><ShieldCheck size={15} /> View Mastery</button><button onClick={() => onNavigate('revision')}><BookOpen size={15} /> Quick Revision</button><button onClick={() => onNavigate('quizzes')}><BookOpen size={15} /> Open Available Quiz</button><button onClick={onUpload}><FileText size={15} /> Upload PDF</button></div></section><section className="rag-state"><h3>PDF / RAG source</h3><p>{uploadState}</p><small>Uploaded PDFs are checked before trusted web fallback.</small></section></aside></>
+}
+
+const sourceText = (source: Record<string, unknown>, ...keys: string[]) => keys.map(key => source[key]).find(value => typeof value === 'string' && value) as string | undefined
+export function SourceBadge({ source }: { source: Record<string, unknown> }) {
+  const type = sourceText(source, 'source_type', 'type') ?? 'source'
+  const label = type === 'pdf' ? 'Uploaded PDF' : type === 'current_affairs' ? 'Current Affairs Source' : source.trust_level === 'official' ? 'Official Source' : 'Trusted Web Source'
+  return <span className="source-badge">{label}</span>
+}
+export function SourceDisclosure({ sources }: { sources?: Array<Record<string, unknown>> }) {
+  if (!sources?.length) return null
+  return <details className="answer-sources"><summary>Sources · {sources.length}</summary><div>{sources.map((source, index) => { const type = sourceText(source, 'source_type', 'type') ?? 'source'; const label = type === 'pdf' ? 'Uploaded PDF' : type === 'current_affairs' ? 'Current Affairs Source' : source.trust_level === 'official' ? 'Official Source' : 'Trusted Web Source'; const title = sourceText(source, 'title', 'source_title', 'document', 'filename') ?? `Source ${index + 1}`; const url = sourceText(source, 'url', 'source_url'); const publisher = sourceText(source, 'publisher'); const retrieved = sourceText(source, 'retrieved_at'); const pageStart = source.page_start ?? source.page; const pageEnd = source.page_end; return <article key={`${title}-${index}`}><span>{label}</span><strong>{title}</strong>{publisher && <small>{publisher}</small>}{pageStart != null && <small>Page {String(pageStart)}{pageEnd && pageEnd !== pageStart ? `–${String(pageEnd)}` : ''}</small>}{retrieved && <small>Retrieved {new Date(retrieved).toLocaleDateString()}</small>}{url && <a href={url} target="_blank" rel="noopener noreferrer">Open safe source</a>}</article> })}</div></details>
+}

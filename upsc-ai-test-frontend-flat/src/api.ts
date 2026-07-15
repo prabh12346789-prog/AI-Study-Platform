@@ -151,6 +151,7 @@ export async function streamChat(
   onToken: (token: string) => void,
   onConversation: (conversationId: string, subject?: string, topic?: string, effectiveLanguage?: string, effectiveDepth?: string, effectiveFormat?: string) => void,
   signal?: AbortSignal,
+  onSources?: (sources: Array<Record<string, unknown>>) => void,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: 'POST',
@@ -189,6 +190,9 @@ export async function streamChat(
     if (eventName === 'conversation') {
       const payload = JSON.parse(data) as { conversation_id: string; subject?: string; topic?: string; effective_language?: string; effective_depth?: string; effective_format?: string }
       onConversation(payload.conversation_id, payload.subject, payload.topic, payload.effective_language, payload.effective_depth, payload.effective_format)
+    } else if (eventName === 'sources') {
+      const payload = JSON.parse(data) as { sources?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>
+      onSources?.(Array.isArray(payload) ? payload : payload.sources ?? [])
     } else if (eventName === 'done' || marker === 'END' || marker === '[DONE]') {
       finished = true
     } else if (eventName === 'error') {
@@ -334,7 +338,7 @@ async function roadmapRequest<T>(path = '', init?: RequestInit): Promise<T> {
   if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string | { message?: string } } | null; const detail = typeof body?.detail === 'object' ? body.detail.message : body?.detail; throw new Error(detail || `Visual roadmap request failed (${response.status})`) }
   return response.status === 204 ? undefined as T : response.json()
 }
-export const createVisualRoadmap = (input: { topic: string; visual_type: VisualType; language: string; conversation_id?: string }) => roadmapRequest<VisualRoadmap>('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+export const createVisualRoadmap = (input: { topic: string; visual_type: VisualType; language: string; conversation_id?: string | null }) => roadmapRequest<VisualRoadmap>('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
 export const listVisualRoadmaps = () => roadmapRequest<VisualRoadmap[]>()
 export const deleteVisualRoadmap = (id: string) => roadmapRequest<void>(`/${id}`, { method: 'DELETE' })
 export const saveVisualRoadmap = (id: string) => roadmapRequest<void>(`/${id}/save`, { method: 'POST' })

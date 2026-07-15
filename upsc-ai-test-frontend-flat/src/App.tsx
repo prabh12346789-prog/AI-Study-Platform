@@ -8,6 +8,7 @@ import { CurrentAffairsPage } from './CurrentAffairsPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
 import { AppPage, AppShell } from './AppShell'
 import { LibraryPage, ProfilePage, ProgressPage, QuizzesPage, RevisionPage } from './StudyHubPages'
+import { AssistantPanel, ConversationRail, SourceDisclosure } from './ChatPanels'
 import {
   API_BASE_URL,
   checkBackend,
@@ -35,6 +36,8 @@ type Message = {
   error?: boolean
   adaptation?: { language: string; depth: string; format: string }
   status?: string
+  sources?: Array<Record<string, unknown>>
+  retryQuestion?: string
 }
 
 const MODES: Array<{ value: StudyMode; label: string; hint: string }> = [
@@ -53,8 +56,7 @@ function initialAssistantMessage(): Message {
   return {
     id: id('assistant'),
     role: 'assistant',
-    content:
-      'Your test frontend is connected to the current backend contract. Choose a study mode, ask a UPSC question, or upload a PDF for RAG.',
+    content: 'Start a UPSC-focused study session. Choose a study mode, ask a focused question, or upload a relevant PDF for grounded support.',
     createdAt: new Date().toISOString(),
   }
 }
@@ -87,6 +89,7 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const selectedMode = useMemo(() => MODES.find((item) => item.value === mode)!, [mode])
+  const activeConversation = useMemo(() => conversations.find(item => item.id === conversationId), [conversations, conversationId])
   const trackingActive = useActiveStudyTracker(conversationId, activeSubject, activeTopic)
 
   useEffect(() => {
@@ -176,9 +179,19 @@ export default function App() {
     setMessages(current => current.map(message => message.id === messageId ? { ...message, adaptation: { language, depth, format } } : message))
   }
 
-  async function submitQuestion(event?: FormEvent) {
+  function setAssistantSources(messageId: string, sources: Array<Record<string, unknown>>) {
+    setMessages(current => current.map(message => message.id === messageId ? { ...message, sources } : message))
+  }
+
+  function readableChatError(message: string) {
+    if (/ollama|local model|connection refused/i.test(message)) return 'Local AI model is unavailable. Start Ollama and try again.'
+    if (/insufficient|grounding|supporting material|reliable context/i.test(message)) return 'Reliable supporting material was not found. Upload a relevant PDF or refine the question.'
+    return 'The response stream failed. Check the local backend and retry.'
+  }
+
+  async function submitQuestion(event?: FormEvent, questionOverride?: string) {
     event?.preventDefault()
-    const trimmed = question.trim()
+    const trimmed = (questionOverride ?? question).trim()
     if (!trimmed || isGenerating) return
     setVideoRequested(/\b(video|watch|youtube)\b/i.test(trimmed))
 
@@ -193,7 +206,7 @@ export default function App() {
       id: assistantId,
       role: 'assistant',
       content: '',
-      status: 'Preparing model…',
+      status: 'Preparing local model…',
       createdAt: new Date().toISOString(),
     }
 
@@ -221,7 +234,7 @@ export default function App() {
           setMessages(current => current.map(message => message.id === assistantId ? { ...message, status: undefined } : message))
         }
         const retrievalTimer = window.setTimeout(() => {
-          setMessages(current => current.map(message => message.id === assistantId && !message.content ? { ...message, status: 'Retrieving relevant context…' } : message))
+          setMessages(current => current.map(message => message.id === assistantId && !message.content ? { ...message, status: 'Retrieving trusted context…' } : message))
         }, 250)
         await streamChat(payload, (token) => {
           pending += token
@@ -229,12 +242,12 @@ export default function App() {
         },
           (id, subject, topic, language, depth, format) => {
             window.clearTimeout(retrievalTimer)
-            setMessages(current => current.map(message => message.id === assistantId && !message.content ? { ...message, status: 'Generating answer…' } : message))
+            setMessages(current => current.map(message => message.id === assistantId && !message.content ? { ...message, status: 'Generating response…' } : message))
             setConversationId(id)
             setActiveSubject(subject ?? null)
             setActiveTopic(topic ?? null)
             setAssistantAdaptation(assistantId, language, depth, format)
-          }, controller.signal)
+          }, controller.signal, sources => setAssistantSources(assistantId, sources))
         if (flushTimer !== undefined) window.clearTimeout(flushTimer)
         flushTokens()
       } else {
@@ -243,6 +256,7 @@ export default function App() {
         setActiveSubject(response.subject ?? null)
         setActiveTopic(response.topic ?? null)
         setAssistantAdaptation(assistantId, response.effective_language, response.effective_depth, response.effective_format)
+        setAssistantSources(assistantId, response.sources)
         updateAssistant(assistantId, () => response.answer)
       }
       await refreshConversations()
@@ -254,7 +268,7 @@ export default function App() {
         setMessages((current) =>
           current.map((item) =>
             item.id === assistantId
-              ? { ...item, content: `Connection error: ${message}`, error: true }
+              ? { ...item, content: readableChatError(message), error: true, retryQuestion: trimmed }
               : item,
           ),
         )
@@ -289,7 +303,7 @@ export default function App() {
       await uploadPdf(file)
       setUploadState(`${file.name} uploaded and sent for processing.`)
     } catch (error) {
-      setUploadState(error instanceof Error ? error.message : 'PDF upload failed.')
+      setUploadState(error instanceof Error && /unavailable|connect|fetch/i.test(error.message) ? 'PDF processing service is unavailable. Check the backend and retry.' : 'PDF processing failed. Confirm the file is a readable PDF and try again.')
     } finally {
       if (fileRef.current) fileRef.current.value = ''
     }
@@ -361,8 +375,9 @@ export default function App() {
         {page === 'chat' && <div className="chat-page">
         <header className="topbar">
           <div>
-            <p className="eyebrow">AI study session</p>
-            <h1>{selectedMode.label} mode</h1>
+            <p className="eyebrow">AI Study Coach</p>
+            <h1>{activeConversation?.title ?? 'Start a UPSC-focused study session'}</h1>
+            <small>{selectedMode.label} mode · {useStreaming ? 'Progressive streaming' : 'Standard response'} · {backendOnline ? 'Backend connected' : backendOnline === false ? 'Backend unavailable' : 'Checking backend'}</small>
           </div>
           <div className="header-controls">
             <label className="select-wrap">
@@ -391,13 +406,14 @@ export default function App() {
           <span>Model settings are selected by the backend generation profile.</span>
         </div>
 
-        <div className="chat-body"><section className="message-list chat-messages" aria-live="polite">
+        <div className="chat-workspace-grid"><ConversationRail conversations={conversations} activeId={conversationId} onNew={() => void newChat()} onSelect={id => void selectConversation(id)} onRename={item => void renameChat(item)} onDelete={id => void removeChat(id)} /><div className="chat-body"><section className="message-list chat-messages" aria-live="polite">
           {messages.map((message) => (
             <article key={message.id} className={`message-row ${message.role}`}>
               <div className="avatar">{message.role === 'user' ? 'You' : 'AI'}</div>
               <div className={`message-card ${message.error ? 'error' : ''}`}>
                 <div className="message-meta">
                   <strong>{message.role === 'user' ? 'You' : 'UPSC Study Assistant'}</strong>
+                  {message.role === 'assistant' && <span className="mode-badge">{selectedMode.label}</span>}
                   <time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
                 </div>
                 {message.content ? (
@@ -411,11 +427,13 @@ export default function App() {
                   </div>
                 )}
                 {message.adaptation && <small className="adaptation-label">{message.adaptation.language} · {message.adaptation.depth} · {message.adaptation.format}</small>}
+                <SourceDisclosure sources={message.sources} />
+                {message.error && message.retryQuestion && <button className="icon-button retry-message" onClick={() => void submitQuestion(undefined, message.retryQuestion)}>Retry question</button>}
               </div>
             </article>
           ))}
           <div ref={bottomRef} />
-        </section><aside className="coach-rail"><p className="eyebrow">Study context</p><h3>{activeTopic ?? activeSubject ?? 'Choose a UPSC topic'}</h3><p>Use a connected workspace action without interrupting this conversation.</p><button onClick={() => setPage('visual')}>Generate Roadmap</button><button onClick={() => setPage('current_affairs')}>Open Current Affairs</button><button onClick={() => setPage('revision')}>Quick Revision</button><button onClick={() => setPage('progress')}>View Mastery</button><small>Suggested: Explain the constitutional significance, compare viewpoints, or create prelims facts.</small></aside></div>
+        </section></div><AssistantPanel subject={activeSubject} topic={activeTopic} uploadState={uploadState} onNavigate={setPage} onUpload={() => fileRef.current?.click()} onQuestion={setQuestion} /></div>
 
         {videoRequested && <VideoRecommendations subject={activeSubject} topic={activeTopic} explicitRequest />}
 
@@ -425,10 +443,12 @@ export default function App() {
 
         <div className="chat-composer-shell"><form className="composer" onSubmit={(event) => void submitQuestion(event)}>
           <div className="adaptation-controls" title="Message settings override your saved profile for this message only.">
+            <label>Mode<select aria-label="Study mode" disabled={isGenerating} value={mode} onChange={event => setMode(event.target.value as StudyMode)}>{MODES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             <label>Language<select aria-label="Response language" disabled={isGenerating || !profileDefaults} value={messageLanguage ?? profileDefaults?.preferred_language ?? 'auto'} onChange={event => setMessageLanguage(event.target.value as LearnerProfile['preferred_language'])}><option value="auto">Auto</option><option value="english">English</option><option value="hindi">Hindi</option><option value="punjabi">Punjabi</option></select></label>
             <label>Depth<select aria-label="Answer depth" disabled={isGenerating || !profileDefaults} value={messageDepth ?? profileDefaults?.preferred_depth ?? 'standard'} onChange={event => setMessageDepth(event.target.value as LearnerProfile['preferred_depth'])}><option value="quick">Quick</option><option value="standard">Standard</option><option value="detailed">Detailed</option></select></label>
             <label>Format<select aria-label="Answer format" disabled={isGenerating || !profileDefaults} value={messageFormat ?? profileDefaults?.preferred_format ?? 'mixed'} onChange={event => setMessageFormat(event.target.value as LearnerProfile['preferred_format'])}><option value="bullets">Bullets</option><option value="structured">Structured</option><option value="explanation">Explanation</option><option value="mixed">Mixed</option></select></label>
             <button type="button" className="icon-button" disabled={isGenerating} onClick={() => { setMessageLanguage(null); setMessageDepth(null); setMessageFormat(null) }}>Use profile defaults</button>
+            <label className="composer-stream-toggle"><input type="checkbox" checked={useStreaming} disabled={isGenerating} onChange={event => setUseStreaming(event.target.checked)} /> Streaming</label>
             <small>{profileDefaults ? messageLanguage || messageDepth || messageFormat ? 'One-message override' : 'Saved profile settings' : 'Loading profile defaults…'}{adaptationError && ` · ${adaptationError}`}</small>
           </div>
           <div className="composer-toolbar">
@@ -441,12 +461,12 @@ export default function App() {
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder="Ask about polity, history, economy, current affairs…"
+            placeholder="Ask about Polity, Economy, History, Current Affairs, Mains writing, or your uploaded PDFs."
             rows={3}
             disabled={isGenerating}
           />
           <div className="composer-bottom">
-            <small>Enter to send · Shift+Enter for a new line</small>
+            <small>Ask about Polity, Economy, History, Current Affairs, Mains writing, or your uploaded PDFs. · Enter to send · Shift+Enter for a new line</small>
             {isGenerating ? (
               <button type="button" className="stop-button" onClick={() => abortRef.current?.abort()}>
                 Stop

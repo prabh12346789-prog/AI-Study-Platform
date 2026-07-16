@@ -6,7 +6,7 @@ This is not a generic chatbot. It must behave like a physical mentor while the l
 
 ## Current stack
 
-- Backend: FastAPI, Python, SQLite, SQLAlchemy, Ollama, Qwen local model, ChromaDB, Sentence Transformers, RAG, and SSE streaming.
+- Backend: FastAPI, Python, SQLite, SQLAlchemy, Ollama, Qwen local model, ChromaDB, Ollama `nomic-embed-text`, `pypdf`, RAG, and SSE streaming.
 - Frontend: React, TypeScript, and the Vite test frontend.
 
 ## Current endpoints
@@ -29,6 +29,7 @@ Supported modes: `learn`, `revision`, `prelims`, `mains`, and `interview`.
 
 ## Permanent rules
 
+- Community is not part of the active MVP. Do not restore its routes, UI, activity creation types, seed data, or tests; legacy SQLite tables and historical activity rows remain readable until a controlled migration.
 - Do not create a generic ChatGPT clone.
 - Preserve working APIs unless a requirement explicitly changes them.
 - Keep normal and streaming chat compatible.
@@ -54,16 +55,16 @@ Supported modes: `learn`, `revision`, `prelims`, `mains`, and `interview`.
 
 ## Current status and priority
 
-Explicit conversation IDs, memory synchronization, and the consent-aware Activity Event Store are implemented and tested. The exact next milestone is subject/topic/time tracking.
+The UPSC AI Mentor MVP is implemented and tested across Chat, PDF/RAG, My Library, learner profile, mastery and forgetting risk, mentor recommendations, trusted videos, personalized Current Affairs, separate quizzes, Visual Roadmaps, activity, progress, and revision. Community is removed. No next feature is selected.
 
 The mode-aware format-repair system is postponed because it is not reliable. Do not mark strict formatting complete; revisit it after the mentor foundation is stable.
 
-Development priority:
+Historical delivery order (completed; not a future priority list):
 
 1. Explicit conversation IDs — completed
 2. Conversation memory synchronization — completed
 3. Activity Event Store — completed
-4. Subject/topic/time tracking — next
+4. Subject/topic/time tracking — completed
 5. Learner Profile
 6. Mastery and forgetting-risk engine
 7. Next-Best-Action engine

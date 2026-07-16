@@ -34,13 +34,23 @@ def test_activity_event_crud_and_validation(tmp_path, monkeypatch):
     assert client.delete(f"/activity/events/{event['id']}").status_code == 204
 
 
-def test_historical_removed_event_type_remains_readable(tmp_path, monkeypatch):
+def test_historical_removed_event_type_remains_readable_but_not_in_summary(tmp_path, monkeypatch):
     path = str(tmp_path / "historical.sqlite3")
     store = ActivityManager(path)
     monkeypatch.setattr(activity, "store", store)
     with get_session_factory(path)() as session:
-        session.add(ActivityEvent(id=str(uuid.uuid4()), user_id="user_001", event_type="community_post_created", consented=True, occurred_at=datetime.now(timezone.utc)))
+        session.add(ActivityEvent(
+            id=str(uuid.uuid4()), user_id="user_001", event_type="community_post_created",
+            subject="Community", topic="Introductions", duration_seconds=3600,
+            consented=True, occurred_at=datetime.now(timezone.utc),
+        ))
         session.commit()
-    response = TestClient(app).get("/activity/events")
+    client = TestClient(app)
+    response = client.get("/activity/events")
     assert response.status_code == 200
     assert response.json()[0]["event_type"] == "community_post_created"
+    summary = client.get("/activity/summary").json()
+    assert summary["total_study_seconds"] == 0
+    assert summary["subjects_studied"] == 0
+    assert summary["top_subject"] is None
+    assert summary["top_topic"] is None

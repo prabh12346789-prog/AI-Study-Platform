@@ -81,7 +81,7 @@ class VectorStore:
 				"document_id": document_id,
 				"original_name": original_name,
 				"word_count": int(chunk["word_count"]),
-				"embedding_model": settings.EMBEDDING_MODEL,
+				"embedding_model": settings.OLLAMA_EMBEDDING_MODEL,
 			}
 
 			page_start = chunk.get("page_start")
@@ -134,7 +134,7 @@ class VectorStore:
 				"source_url": chunk.get("source_url"), "publication_date": chunk.get("publication_date") or "",
 				"subject": chunk.get("subject"), "topic": chunk.get("topic"), "retrieved_at": chunk.get("retrieved_at"),
 				"content_hash": chunk.get("content_hash"), "word_count": len(chunk["text"].split()),
-				"embedding_model": settings.EMBEDDING_MODEL,
+				"embedding_model": settings.OLLAMA_EMBEDDING_MODEL,
 			}.items() if value is not None})
 		self.collection.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
 		return ids

@@ -13,9 +13,13 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     LLM_PROVIDER: str = "ollama"
     OLLAMA_MODEL: str = "qwen3:8b"
-    EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    EMBEDDING_PROVIDER: str = "ollama"
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
+    OLLAMA_EMBEDDING_TIMEOUT_SECONDS: float = 60.0
+    OLLAMA_HEALTH_TIMEOUT_SECONDS: float = 1.0
     VECTOR_DB: str = "chromadb"
-    CHROMA_COLLECTION: str = "documents"
+    CHROMA_COLLECTION: str = "documents_ollama_nomic_embed_text"
     CHROMA_DB_PATH: str = "./chroma_db"
     TOP_K_RESULTS: int = 5
     SIMILARITY_THRESHOLD: float = 0.70

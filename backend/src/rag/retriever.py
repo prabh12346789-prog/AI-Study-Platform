@@ -11,8 +11,7 @@ class Retriever:
 
     def retrieve(self, question: str):
 
-        model = EmbeddingService.load_model()
-        question_embedding = model.encode([question], normalize_embeddings=True)[0]
+        question_embedding = EmbeddingService.generate_embedding(question)
         search_results = self.vector_store.search(question_embedding, n_results=settings.TOP_K_RESULTS)
 
         return self._format_results(search_results)

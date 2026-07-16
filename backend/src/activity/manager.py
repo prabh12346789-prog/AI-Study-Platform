@@ -123,6 +123,10 @@ class ActivityManager:
         subject_seconds: defaultdict[str, int] = defaultdict(int)
         topic_seconds: defaultdict[str, int] = defaultdict(int)
         for event in events:
+            # Historical rows may contain event names from removed features. Keep
+            # them readable, but never let them affect active learning progress.
+            if event.event_type not in SUPPORTED_EVENT_TYPES:
+                continue
             if event.subject:
                 subject_counts[event.subject] += 1
             if event.topic:

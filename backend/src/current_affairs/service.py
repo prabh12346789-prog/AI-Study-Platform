@@ -21,8 +21,18 @@ from src.rag.embeddings import EmbeddingService
 from src.rag.vector_store import VectorStore
 from src.search.web_search import APPROVED_DOMAINS, TrustedSourcePolicy, WebSearch
 from src.core.config import settings
+from src.current_affairs.source_policy import controlled_queries, source_adapter
 
 log = logging.getLogger(__name__)
+
+REJECTION_DIAGNOSTICS = (
+    "search_result_rejected_before_url_processing", "unapproved_domain", "redirect_to_unapproved_domain",
+    "homepage_index_archive_search_page", "duplicate_canonical_url", "duplicate_content_hash",
+    "extraction_http_failure", "blocked_challenge_response", "insufficient_clean_text",
+    "missing_article_specific_title", "insufficient_substantive_paragraphs",
+    "excessive_boilerplate_navigation", "invalid_implausible_publication_date", "summarization_failure",
+    "unsupported_factual_claims", "embedding_indexing_failure", "unapproved_current_affairs_source",
+)
 
 
 class ArticleSummary(BaseModel):
@@ -58,15 +68,36 @@ class CurrentAffairsService:
     @staticmethod
     def default_queries(collection_date: date):
         stamp = collection_date.strftime("%d %B %Y")
-        return [
-            f"site:pib.gov.in India government schemes {stamp}",
-            f"site:rbi.org.in RBI India economy {stamp}",
-            f"site:parliamentofindia.nic.in Parliament India governance {stamp}",
-            f"site:gov.in India environment science technology {stamp}",
-            f"site:un.org India international institutions {stamp}",
-        ]
+        return controlled_queries(stamp)
+
+    def reindex_active(self):
+        with self.sessions() as session:
+            rows = list(session.scalars(select(CurrentAffairsArticle).where(CurrentAffairsArticle.status == "active")))
+        indexed, errors = 0, []
+        for row in rows:
+            try:
+                self._index(row); indexed += 1
+            except Exception as error:
+                errors.append({"article_id": row.id, "error": type(error).__name__})
+        return {"accepted": len(rows), "indexed": indexed, "errors": errors}
+
+    def archive_misclassified_active(self):
+        with self.sessions() as session:
+            rows = list(session.scalars(select(CurrentAffairsArticle).where(CurrentAffairsArticle.status == "active")))
+            invalid = [row for row in rows if WebSearch.page_type(row.source_url) != "article" or source_adapter(row.source_url) is None]
+            for row in invalid: row.status = "archived"
+            session.commit()
+        if invalid:
+            try:
+                store = VectorStore()
+                for row in invalid: store.collection.delete(where={"article_id": row.id})
+            except Exception as error:
+                log.warning("Current Affairs invalid-vector cleanup failed: %s", type(error).__name__)
+        return [row.id for row in invalid]
 
     async def collect_for_date(self, collection_date: date, *, max_results=10, generate_brief=False, language="english", queries=None, urls=None):
+        self.archive_misclassified_active()
+        use_source_discovery = queries is None and not urls
         queries = list(queries) if queries else ([] if urls else self.default_queries(collection_date))
         urls = list(urls or [])
         if hasattr(self.web, "validate_configuration"):
@@ -79,11 +110,21 @@ class CurrentAffairsService:
         diagnostics = {"raw_results": 0, "approved_results": 0, "rejected_domains": 0,
             "rejected_redirects": 0, "extraction_attempts": 0, "extraction_successes": 0}
         zero_reasons = []
-        work = [("query", query) for query in queries] + [("url", url) for url in urls]
+        discovered = {"candidates": [], "source_progress": []}
+        if use_source_discovery and hasattr(self.web, "discover_feeds"):
+            discovered = await asyncio.to_thread(self.web.discover_feeds, max_results)
+            source_progress.extend(discovered.get("source_progress", []))
+            if hasattr(self.web, "discover_listings"):
+                listings = await asyncio.to_thread(self.web.discover_listings, max_results)
+                discovered["candidates"].extend(listings.get("candidates", []))
+                source_progress.extend(listings.get("source_progress", []))
+        work = [("candidate", candidate) for candidate in discovered.get("candidates", [])]
+        work += [("query", query) for query in queries] + [("url", url) for url in urls]
         for kind, value in work:
             if collected >= max_results: break
             try:
                 if kind == "url": found = await asyncio.to_thread(self.web.fetch_url, value, f"current affairs {collection_date.isoformat()}")
+                elif kind == "candidate": found = await asyncio.to_thread(self.web.fetch_candidate, value, f"current affairs {collection_date.isoformat()}")
                 else: found = await asyncio.to_thread(self.web.search, value)
             except Exception as error:
                 errors.append(f"Trusted {kind} failed: {type(error).__name__}"); continue
@@ -97,15 +138,22 @@ class CurrentAffairsService:
                 collected += 1
                 if not chunk.get("publication_date"): chunk = {**chunk, "publication_date": collection_date.isoformat()}
                 with self.sessions() as session:
-                    existing = session.scalar(select(CurrentAffairsArticle).where(or_(
-                        CurrentAffairsArticle.source_url == chunk.get("source_url", ""),
-                        CurrentAffairsArticle.content_hash == (chunk.get("content_hash") or ""))))
+                    existing = session.scalar(select(CurrentAffairsArticle).where(
+                        or_(CurrentAffairsArticle.source_url == chunk.get("source_url", ""),
+                            CurrentAffairsArticle.content_hash == (chunk.get("content_hash") or "")),
+                        CurrentAffairsArticle.status == "active"))
                 if existing:
-                    duplicates += 1; article_ids.append(existing.id); continue
-                row = await self.ingest_chunk(chunk); article_ids.append(row.id)
+                    duplicates += 1; article_ids.append(existing.id)
+                    duplicate_code = "duplicate_canonical_url" if existing.source_url == chunk.get("source_url") else "duplicate_content_hash"
+                    source_progress.append({"url": chunk.get("source_url"), "status": "duplicate",
+                        "rejection_code": duplicate_code, "reason": duplicate_code, "summarization": "not attempted"})
+                    continue
+                row = await self.ingest_chunk(chunk)
+                if row.status == "active": article_ids.append(row.id)
                 quality = chunk.get("article_quality") or WebSearch.article_quality(chunk)
                 final_progress = {"url": chunk.get("source_url"), "page_type": quality["page_type"],
                     "quality_score": quality["quality_score"], "status": "accepted" if row.status == "active" else "rejected",
+                    "rejection_code": None if row.status == "active" else getattr(row, "diagnostic_reason", "summarization_failure"),
                     "reason": row.summary if row.status != "active" else "grounded article accepted",
                     "summarization": "accepted" if row.status == "active" else "rejected"}
                 pending = next((item for item in source_progress if item.get("url") == chunk.get("source_url") and item.get("status") == "candidate"), None)
@@ -113,20 +161,30 @@ class CurrentAffairsService:
                 else: source_progress.append(final_progress)
                 if row.status == "active": accepted += 1
                 else: rejected += 1
-        brief_status, brief_error = "not_requested", None
+        brief_status, brief_error, brief_date = "not_requested", None, None
         if generate_brief:
-            try: self.generate_daily(collection_date, language); brief_status = "generated"
+            try:
+                target_date = collection_date
+                if not self.list_articles(date_value=target_date) and article_ids:
+                    with self.sessions() as session:
+                        dates = list(session.scalars(select(CurrentAffairsArticle.publication_date).where(
+                            CurrentAffairsArticle.id.in_(article_ids), CurrentAffairsArticle.status == "active")))
+                    target_date = max((value for value in dates if value), default=collection_date)
+                self.generate_daily(target_date, language); brief_status = "generated"; brief_date = target_date
             except Exception as error: brief_status, brief_error = "failed", str(error)
         log.info("Current Affairs collection complete raw=%d approved=%d rejected_domains=%d extraction_attempts=%d extraction_successes=%d final_candidates=%d",
             diagnostics["raw_results"], diagnostics["approved_results"], diagnostics["rejected_domains"],
             diagnostics["extraction_attempts"], diagnostics["extraction_successes"], collected)
+        rejection_breakdown = Counter({code: 0 for code in REJECTION_DIAGNOSTICS})
+        rejection_breakdown.update(item.get("rejection_code") for item in source_progress if item.get("rejection_code"))
         return {"date": collection_date, "search_provider": provider_name if queries else "direct_url",
             "queries_executed": queries, **diagnostics, "zero_result_reason": "; ".join(dict.fromkeys(zero_reasons)) or None,
             "source_progress": source_progress,
+            "rejection_breakdown": dict(sorted(rejection_breakdown.items())),
             "extraction_failures": diagnostics["extraction_attempts"] - diagnostics["extraction_successes"],
             "collected": collected, "accepted": accepted, "rejected": rejected,
             "duplicates": duplicates, "article_ids": list(dict.fromkeys(article_ids)), "collection_errors": errors,
-            "daily_brief": brief_status, "brief_error": brief_error}
+            "daily_brief": brief_status, "brief_date": brief_date, "brief_error": brief_error}
 
     async def ingest_chunk(self, chunk: dict):
         url = chunk.get("source_url", ""); policy = TrustedSourcePolicy.classify(url)
@@ -134,10 +192,14 @@ class CurrentAffairsService:
         with self.sessions() as session:
             existing = session.scalar(select(CurrentAffairsArticle).where(or_(
                 CurrentAffairsArticle.source_url == url, CurrentAffairsArticle.content_hash == content_hash)))
-            if existing: return existing
+            if existing and existing.status == "active": return existing
+            if existing:
+                session.delete(existing); session.commit()
         classification = self.classifier.classify(chunk.get("text", ""))
         quality = chunk.get("article_quality") or WebSearch.article_quality(chunk)
-        status = "active" if policy and quality["is_article"] else "rejected"
+        adapter = source_adapter(url)
+        status = "active" if policy and adapter and quality["is_article"] else "rejected"
+        rejection_code = None if status == "active" else "unapproved_current_affairs_source" if policy and not adapter else WebSearch.rejection_code("; ".join(quality["reasons"]))
         summary = None
         if status == "active":
             prompt = f"""Use ONLY the article body and metadata below. Return one strict JSON object with keys what_happened, background, why_it_matters, prelims_facts, mains_relevance, subject, topic, importance_level. prelims_facts and mains_relevance must be arrays of plain strings and may be empty. background and why_it_matters must be strings and may be empty. what_happened must state the grounded core event. Copy dates and quantities exactly when used; never calculate, extrapolate, or invent an end date or consequence. Omit an optional point instead of inferring it. importance_level must be low, medium, or high.\nTITLE: {chunk.get('source_title')}\nPUBLISHER: {chunk.get('publisher')}\nURL: {url}\nPUBLICATION DATE: {chunk.get('publication_date') or 'unavailable'}\nARTICLE BODY:\n{chunk['text']}"""
@@ -145,8 +207,9 @@ class CurrentAffairsService:
                 raw = await self.llm.generate(prompt=prompt, mode="learn", depth="quick")
                 summary = self._parse_summary(raw)
                 if not self._summary_is_grounded(summary, chunk["text"]):
-                    status = "rejected"; summary = None
-            except (json.JSONDecodeError, ValidationError, RuntimeError): status = "rejected"
+                    status = "rejected"; summary = None; rejection_code = "unsupported_factual_claims"
+            except (json.JSONDecodeError, ValidationError, RuntimeError):
+                status = "rejected"; rejection_code = "summarization_failure"
         if summary:
             summary_text = (f"What happened: {summary.what_happened}\nBackground: {summary.background}\n"
                 f"Why it matters: {summary.why_it_matters}\nSource citation: {chunk.get('publisher')} — {url}")
@@ -164,8 +227,15 @@ class CurrentAffairsService:
             subject=str(classification["subject"]), topic=str(classification["topic"]), syllabus_tags_json=tags,
             importance_level=importance, relevance_prelims=prelims, relevance_mains=mains,
             content_hash=content_hash, status=status)
+        row.diagnostic_reason = rejection_code
+        if row.status != "active": return row
+        try:
+            await asyncio.to_thread(self._index, row)
+        except Exception:
+            row.status = "rejected"; row.summary = "Rejected: embedding/indexing failure."
+            row.diagnostic_reason = "embedding_indexing_failure"
+            return row
         with self.sessions() as session: session.add(row); session.commit(); session.refresh(row)
-        if row.status == "active": await asyncio.to_thread(self._index, row)
         return row
 
     @staticmethod
@@ -252,6 +322,16 @@ class CurrentAffairsService:
     def generate_daily(self, brief_date: date, language="english"):
         articles = [item[0] for item in self.list_articles(date_value=brief_date)]
         if not articles: raise ValueError("No accepted current-affairs articles exist for this date")
+        grouped = []
+        for article in articles:
+            words = set(re.findall(r"[a-z0-9]+", article.title.casefold())) - {"the", "a", "an", "of", "for", "to", "and", "in", "on", "india"}
+            duplicate = False
+            for existing in grouped:
+                other = set(re.findall(r"[a-z0-9]+", existing.title.casefold())) - {"the", "a", "an", "of", "for", "to", "and", "in", "on", "india"}
+                similarity = len(words & other) / len(words | other) if words and other else 0
+                if article.topic == existing.topic and similarity >= .5: duplicate = True; break
+            if not duplicate: grouped.append(article)
+        articles = grouped
         subjects = defaultdict(list)
         for article in articles: subjects[article.subject].append(article.id)
         ranked = sorted(articles, key=lambda item: ({"high": 3, "medium": 2, "low": 1}[item.importance_level], item.retrieved_at), reverse=True)

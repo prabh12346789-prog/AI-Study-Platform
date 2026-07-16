@@ -43,11 +43,15 @@ def root():
 def health():
     from src.rag.embeddings import EmbeddingService
     from src.rag.vector_store import VectorStore
+    embedding_status = EmbeddingService.health_status()
     return {
         "status": "ok",
         "database": "ready",
-        "ollama": "not_checked",
-        "embeddings": "loaded" if EmbeddingService.is_loaded() else "not_loaded",
+        "ollama": "reachable" if embedding_status["ollama_reachable"] else "unreachable",
+        "embedding_provider": embedding_status["provider"],
+        "embedding_model": embedding_status["model"],
+        "embedding_model_available": embedding_status["model_available"],
+        "embeddings": "available" if EmbeddingService.is_loaded() else "not_checked",
         "vector_store": "ready" if VectorStore.is_initialized() else "not_initialized",
     }
 

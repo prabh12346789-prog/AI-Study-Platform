@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRoadmapQuiz, RoadmapQuiz, RoadmapQuizResult, submitRoadmapQuiz, VisualRoadmap } from './api'
 
+const quizCreationRequests = new Map<string, Promise<RoadmapQuiz>>()
+
+function createQuizOnce(roadmapId: string) {
+  const existing = quizCreationRequests.get(roadmapId)
+  if (existing) return existing
+  const request = createRoadmapQuiz(roadmapId).catch(reason => {
+    quizCreationRequests.delete(roadmapId)
+    throw reason
+  })
+  quizCreationRequests.set(roadmapId, request)
+  return request
+}
+
 export function RoadmapQuizPanel({ roadmap, onClose }: { roadmap: VisualRoadmap; onClose: () => void }) {
   const [quiz, setQuiz] = useState<RoadmapQuiz | null>(null); const [result, setResult] = useState<RoadmapQuizResult | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({}); const [index, setIndex] = useState(0)
   const [loading, setLoading] = useState(true); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState('')
-  async function load() { setLoading(true); setError(''); setResult(null); setAnswers({}); setIndex(0); try { setQuiz(await createRoadmapQuiz(roadmap.id)) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Quiz generation failed.') } finally { setLoading(false) } }
+  async function load() { setLoading(true); setError(''); setResult(null); setAnswers({}); setIndex(0); try { setQuiz(await createQuizOnce(roadmap.id)) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Quiz generation failed.') } finally { setLoading(false) } }
   useEffect(() => { void load() }, [roadmap.id])
   const question = quiz?.questions[index]
   const nodeNames = useMemo(() => new Map(roadmap.structure.nodes.map(node => [node.id, node.label])), [roadmap])

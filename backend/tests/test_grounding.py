@@ -108,7 +108,7 @@ class RoadmapSearch:
 
 class RoadmapLlm:
     async def generate(self, prompt, **_kwargs):
-        sources = json.loads(prompt.split("Copy this exact sources array into the response: ", 1)[1].split("\nRetrieved context:", 1)[0])
+        sources = json.loads(prompt.split("Supplied sources array:\n", 1)[1].split("\n\nGrounded context:", 1)[0])
         return json.dumps({"title": "History", "visual_type": "timeline", "summary": "Development",
             "nodes": [{"id": "n1", "label": "Regulating Act", "year": "1773", "description": "Parliamentary control began.",
                 "importance": "Early control", "source_ids": ["source_1"]}], "connections": [], "exam_points": [], "sources": sources})

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from datetime import date
@@ -62,6 +63,7 @@ def print_summary(result):
     print(f"Accepted: {result['accepted']}")
     print(f"Rejected: {result['rejected']}")
     print(f"Duplicates: {result['duplicates']}")
+    print("Rejection breakdown: " + json.dumps(result.get("rejection_breakdown", {}), sort_keys=True))
     print(f"Daily brief: {result['daily_brief']}")
     if result.get("collection_errors"): print("Collection errors: " + "; ".join(result["collection_errors"]))
     if result.get("raw_results", 0) == 0: print("Zero-result reason: " + (result.get("zero_result_reason") or "no search matches"))

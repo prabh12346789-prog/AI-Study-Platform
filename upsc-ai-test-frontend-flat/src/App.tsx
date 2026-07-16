@@ -24,6 +24,7 @@ import {
   uploadPdf,
   getProfile,
   LearnerProfile,
+  PdfDocument,
 } from './api'
 
 type Role = 'user' | 'assistant'
@@ -74,6 +75,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null)
   const [uploadState, setUploadState] = useState('No PDF selected')
+  const [libraryRevision, setLibraryRevision] = useState(0)
   const [profileDefaults, setProfileDefaults] = useState<LearnerProfile | null>(null)
   const [adaptationError, setAdaptationError] = useState('')
   const [messageLanguage, setMessageLanguage] = useState<LearnerProfile['preferred_language'] | null>(null)
@@ -284,6 +286,11 @@ export default function App() {
     setPage('chat')
   }
 
+  function askAboutDocument(document: PdfDocument) {
+    setQuestion(`According to the uploaded document ${document.name}, `)
+    setPage('chat')
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -302,6 +309,7 @@ export default function App() {
     try {
       await uploadPdf(file)
       setUploadState(`${file.name} uploaded and sent for processing.`)
+      setLibraryRevision(value => value + 1)
     } catch (error) {
       setUploadState(error instanceof Error && /unavailable|connect|fetch/i.test(error.message) ? 'PDF processing service is unavailable. Check the backend and retry.' : 'PDF processing failed. Confirm the file is a readable PDF and try again.')
     } finally {
@@ -361,8 +369,8 @@ export default function App() {
 
       </>}>
         {page === 'visual' && <VisualLearningPage onAsk={askFromRoadmap} />}
-        {page === 'current_affairs' && <CurrentAffairsPage />}
-        {page === 'library' && <LibraryPage onUpload={() => fileRef.current?.click()} uploadState={uploadState} />}
+        {page === 'current_affairs' && <CurrentAffairsPage onNavigate={setPage} />}
+        {page === 'library' && <LibraryPage onUpload={() => fileRef.current?.click()} uploadState={uploadState} refreshKey={libraryRevision} onAsk={askAboutDocument} onVisual={() => setPage('visual')} />}
         {page === 'revision' && <RevisionPage trackingActive={trackingActive} />}
         {page === 'quizzes' && <QuizzesPage onNavigate={setPage} />}
         {page === 'progress' && <ProgressPage trackingActive={trackingActive} />}

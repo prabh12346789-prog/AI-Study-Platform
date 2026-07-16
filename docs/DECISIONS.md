@@ -11,7 +11,7 @@
 ## Retrieval architecture
 
 - Date: Existing project decision; recorded 2026-07-14
-- Decision: Use ChromaDB, Sentence Transformers, and RAG for study-document context.
+- Decision: Use ChromaDB and RAG for study-document context. The original Sentence Transformers implementation was superseded by the accepted Ollama HTTP embedding decision below.
 - Reason: Ground answers in learner-provided material using local components.
 - Trade-off: Index lifecycle and retrieval quality require ongoing validation.
 - Status: Accepted
@@ -151,3 +151,25 @@
 - Reason: Current Affairs recall needs auditable source citations and must never let reading, saving, popularity, or repeated submission inflate retention or mastery.
 - Trade-off: Question variety is limited by stored facts, true/false statements remain grounded true statements, and insufficient distinct content returns an error rather than inventing distractors.
 - Status: Accepted
+# Ollama HTTP embeddings replace SentenceTransformers
+
+- Decision: Generate normalized embeddings through the local Ollama `/api/embed` endpoint using configurable `nomic-embed-text` rather than importing SentenceTransformers/PyTorch.
+- Reason: Windows Application Control blocks PyTorch's native `torch/lib/shm.dll`, while the Ollama service keeps native model execution outside the FastAPI process.
+- Compatibility: Use the separate `documents_ollama_nomic_embed_text` Chroma collection. Never mix legacy BGE vectors with Ollama vectors; existing content must be re-indexed.
+# Deterministic grounded fallback for malformed roadmap JSON
+
+- Decision: Attempt direct tolerant JSON parsing and strict schema validation, make at most one schema-guided repair call, then build a deterministic roadmap only from retrieved chunk sentences when model output remains invalid.
+- Reason: Local Qwen can truncate or corrupt structured JSON even with a JSON-only prompt. Repeated generation is slow and unreliable, while grounded sentence extraction can safely preserve facts and citations.
+- Safety boundary: The fallback never runs without sufficient grounding, never invents facts or sources, validates through the same `RoadmapStructure`, and records `generation_method=deterministic_fallback` in internal metadata and activity.
+# Controlled, grouped, personalized Current Affairs
+
+- Decision: Keep one explicit source-adapter catalog with primary, daily-analysis, Mains/editorial, and monthly-revision tiers; all discovered URLs still pass the shared allowlist, redirect, article-quality, and grounded-summary gates.
+- Issue grouping: Canonical URL and content hash are exact duplicate keys. Same-date records are grouped when their normalized titles are similar or their classified topics match, with the highest-tier source leading and supporting citations retained.
+- Personalization: Use transparent additive ranking signals from importance, source confidence, freshness, activity/mode, profile preferences, mastery/risk, Current Affairs retention, and saved state. Reading and saving remain non-mastery activity.
+- Scheduling: Windows Task Scheduler calls a secret-free local Python runner daily at 7:00 AM. The runner reads `.env` at runtime, rejects overlapping execution, checks Ollama/model availability with a timeout, collects idempotently, re-indexes accepted rows, and writes timestamped logs.
+# Atomic, official-first Current Affairs ingestion
+
+- Discovery order: Public RSS/Atom source adapters first, then approved public source listings, then controlled search queries, with manually supplied allowlisted article URLs available for diagnosis. Feed/listing metadata influences ranking but never bypasses URL, redirect, extraction, quality, or grounding checks.
+- Trust boundary: Current Affairs accepts only domains in its explicit source-adapter catalog even when another domain is permitted for general Chat grounding. Quiz, test, answer-writing, archive, index, tag, search, login, and channel pages are rejected before extraction.
+- Atomicity: An active article is indexed before its database commit. Summary/grounding/indexing failures return structured diagnostics but create no article record. Legacy misclassified active records are archived and their Current Affairs vectors removed.
+- Diagnostics: Every collection result carries zero-inclusive rejection counts for URL, domain, redirect, page type, duplicates, HTTP/challenge, extraction quality, metadata, summarization, grounding, and indexing stages without storing page bodies or secrets.

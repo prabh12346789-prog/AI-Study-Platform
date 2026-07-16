@@ -14,6 +14,9 @@ from src.core.config import settings
 from src.api.routes import current_affairs as route
 from scripts.collect_current_affairs import build_parser, run_collection
 from src.search.web_search import WebSearch
+from src.current_affairs.models import CurrentAffairsArticle
+from src.memory.storage import get_session_factory
+from sqlalchemy import func, select
 
 
 class SummaryLlm:
@@ -60,6 +63,8 @@ def test_unapproved_and_insufficient_extraction_are_rejected(tmp_path):
     insufficient = asyncio.run(service.ingest_chunk(trusted_chunk(text="too short", url="https://rbi.org.in/short")))
     assert unapproved.status == insufficient.status == "rejected" and indexed == []
     assert service.list_articles() == []
+    reference = asyncio.run(service.ingest_chunk(trusted_chunk(url="https://britannica.com/place/India")))
+    assert reference.status == "rejected" and reference.diagnostic_reason == "unapproved_current_affairs_source"
 
 
 def test_duplicate_url_or_hash_is_prevented(tmp_path):
@@ -171,8 +176,8 @@ def test_cli_query_and_direct_url_are_repeatable():
 
 def test_default_queries_are_date_aware_and_cover_required_areas():
     queries = CurrentAffairsService.default_queries(date(2026, 7, 15)); joined = " ".join(queries).casefold()
-    assert len(queries) == 5 and "15 july 2026" in joined
-    for term in ("pib.gov.in", "rbi.org.in", "parliament", "environment", "science", "un.org"):
+    assert len(queries) == 7 and "15 july 2026" in joined
+    for term in ("pib.gov.in", "rbi.org.in", "mea.gov.in", "forumias.com", "insightsonindia.com", "drishtiias.com", "visionias.in"):
         assert term in joined
 
 
@@ -227,6 +232,8 @@ def test_article_quality_scoring_and_article_ranks_above_homepage():
     homepage = {"url": "https://www.rbi.org.in/", "title": "Home - Reserve Bank of India"}
     result = {"url": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60001", "title": "RBI policy update"}
     assert WebSearch._candidate_rank(result, "RBI policy update 15 July 2026") > WebSearch._candidate_rank(homepage, "RBI policy update 15 July 2026")
+    assert WebSearch.page_type("https://insightsonindia.com/2026/07/16/upsc-editorials-quiz-16-july-2026/") == "index"
+    assert WebSearch.page_type("https://example.gov.in/mains-answer-writing-practice/") == "index"
 
 
 def test_optional_summary_fields_may_be_empty_and_fenced_extra_text_parses():
@@ -255,6 +262,62 @@ def test_unsupported_factual_summary_is_rejected(tmp_path):
                 "importance_level": "high"})
     service = CurrentAffairsService(db_path=str(tmp_path/"unsupported.sqlite3"), llm=UnsupportedLlm(), indexer=lambda *_: None)
     assert asyncio.run(service.ingest_chunk(trusted_chunk())).status == "rejected"
+    with get_session_factory(str(tmp_path/"unsupported.sqlite3"))() as session:
+        assert session.scalar(select(func.count()).select_from(CurrentAffairsArticle)) == 0
+
+
+def test_indexing_failure_does_not_commit_accepted_article(tmp_path):
+    db = str(tmp_path / "index-failure.sqlite3")
+    service = CurrentAffairsService(db_path=db, llm=SummaryLlm(), indexer=lambda *_: (_ for _ in ()).throw(RuntimeError("index unavailable")))
+    row = asyncio.run(service.ingest_chunk(trusted_chunk()))
+    assert row.status == "rejected" and row.diagnostic_reason == "embedding_indexing_failure"
+    with get_session_factory(db)() as session:
+        assert session.scalar(select(func.count()).select_from(CurrentAffairsArticle)) == 0
+
+
+def test_feed_discovery_returns_approved_article_metadata(monkeypatch):
+    rss = """<rss><channel><item><title>RBI Policy Statement</title><link>https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60774</link><pubDate>Wed, 15 Jul 2026 10:00:00 GMT</pubDate></item></channel></rss>"""
+    response = SimpleNamespace(text=rss, raise_for_status=lambda: None)
+    monkeypatch.setattr("src.search.web_search.requests.get", lambda *args, **kwargs: response)
+    result = WebSearch(cache=SimpleNamespace()).discover_feeds()
+    assert result["candidates"]
+    candidate = result["candidates"][0]
+    assert candidate["discovery_method"] == "rss_atom" and candidate["title"] == "RBI Policy Statement"
+
+
+def test_source_listing_discovery_prefers_article_identifiers(monkeypatch):
+    html = '''<a href="/">RBI Home</a><a href="/Scripts/BS_PressReleaseDisplay.aspx">Press release archive</a><a href="/Scripts/BS_PressReleaseDisplay.aspx?prid=60774">Directions issued to Bhavani Sahakari Bank</a>'''
+    response = SimpleNamespace(text=html, url="https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx", raise_for_status=lambda: None)
+    monkeypatch.setattr("src.search.web_search.requests.get", lambda *args, **kwargs: response)
+    result = WebSearch(cache=SimpleNamespace()).discover_listings()
+    assert len(result["candidates"]) == 1  # identical canonical articles from listings are deduplicated
+    assert all(item["discovery_method"] == "source_listing" and "prid=60774" in item["url"] for item in result["candidates"])
+
+
+def test_source_specific_extraction_and_article_url_ranking(monkeypatch):
+    paragraph = "The Reserve Bank of India published an official policy decision affecting regulated institutions, liquidity, inflation management, financial stability, and economic conditions. "
+    html = f'''<html><head><meta property="og:title" content="RBI publishes monetary policy decision"><meta property="article:published_time" content="2026-07-15"><link rel="canonical" href="https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60774"></head><body><div class="article-content"><p>{paragraph}</p><p>{paragraph}Further official details were provided.</p><p>{paragraph}Implementation follows the published framework.</p></div></body></html>'''
+    response = SimpleNamespace(text=html, url="https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60774", status_code=200, raise_for_status=lambda: None)
+    monkeypatch.setattr("src.search.web_search.requests.get", lambda *args, **kwargs: response)
+    found = WebSearch(cache=SimpleNamespace()).fetch_candidate({"url": response.url, "title": "RBI policy", "snippet": "", "discovery_method": "rss_atom"}, "RBI monetary policy")
+    assert found["chunks"][0]["extraction_adapter"] == "source_specific"
+    assert found["chunks"][0]["source_title"] == "RBI publishes monetary policy decision"
+    article = {"url": response.url, "title": "RBI policy", "publication_date": "2026-07-15", "discovery_method": "rss_atom"}
+    assert WebSearch._candidate_rank(article, "RBI policy") > WebSearch._candidate_rank({"url": "https://rbi.org.in/", "title": "RBI"}, "RBI policy")
+
+
+def test_structured_rejection_breakdown_is_returned(tmp_path):
+    class Web:
+        provider_name = "test"
+        def validate_configuration(self, **kwargs): pass
+        def search(self, query): return {"chunks": [], "raw_results": 2, "source_progress": [
+            {"url": "https://bad.example", "status": "rejected", "rejection_code": "unapproved_domain"},
+            {"url": "https://rbi.org.in/", "status": "rejected", "rejection_code": "homepage_index_archive_search_page"}]}
+    service, _ = setup(tmp_path); service.web = Web()
+    result = asyncio.run(service.collect_for_date(date.today(), queries=["test"]))
+    assert result["rejection_breakdown"]["homepage_index_archive_search_page"] == 1
+    assert result["rejection_breakdown"]["unapproved_domain"] == 1
+    assert result["rejection_breakdown"]["embedding_indexing_failure"] == 0
 
 
 def test_rejected_page_does_not_stop_valid_article_and_brief_generates(tmp_path):

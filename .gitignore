@@ -1,0 +1,72 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local databases, caches, and locks
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.lock
+backend/data/
+backend/chroma_db/
+backend/uploads/
+backend/generated/
+backend/logs/
+backend/*.log
+backend/*.pdf
+
+# Ollama / vector state
+.ollama/
+chroma_db/
+**/chroma_db/
+
+# React / Vite
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.vite/
+coverage/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+.test-tmp-*/
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Windows and IDE files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+.vs/

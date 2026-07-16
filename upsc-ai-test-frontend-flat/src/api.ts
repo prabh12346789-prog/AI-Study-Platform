@@ -93,6 +93,12 @@ export interface VideoRecommendation { video: VideoResource; reasons: string[] }
 
 export interface Conversation { id: string; title: string; created_at: string; updated_at: string }
 export interface ConversationMessage { id: number; conversation_id: string; role: 'user' | 'assistant'; content: string; timestamp: string }
+export interface PdfDocument {
+  document_id: string; name: string; uploaded_at: string; status: string
+  page_count: number | null; chunk_count: number | null
+  embedding_provider: string | null; embedding_model: string | null; embedding_collection: string | null
+  indexed: boolean
+}
 export type VisualType = 'timeline' | 'flowchart' | 'concept_map' | 'comparison' | 'process' | 'cause_effect'
 export interface RoadmapSource { id: string; source_type: 'pdf' | 'web'; document: string | null; title: string | null; url: string | null; publisher: string | null; domain: string | null; retrieved_at: string | null; source_category: string | null; trust_level: string | null; page_start: number | null; page_end: number | null; chunk_id: string | null }
 export interface VisualRoadmap { id: string; status: string; title: string; subject: string; topic: string; visual_type: VisualType; language: string; conversation_id: string | null; svg_url: string; created_at: string; updated_at: string; sources: RoadmapSource[]; structure: { title: string; summary: string; visual_type: VisualType; nodes: Array<{ id: string; label: string; description: string; source_ids: string[] }>; connections: Array<{ from: string; to: string; label: string }>; exam_points: string[]; sources: RoadmapSource[] } }
@@ -108,6 +114,8 @@ export interface CurrentAffairsQuiz { id: string; title: string; period_type: st
 export interface CurrentAffairsQuizResult { id: string; score: number; total: number; percentage: number; results: Array<{ question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; article_id: string; source_url: string; topic: string }>; weak_article_ids: string[]; weak_topics: string[] }
 export interface CurrentAffairsRetention { id: string; article_id: string; subject: string; topic: string; retention_score: number; correct_attempts: number; incorrect_attempts: number; recall_failures: number; last_attempt_at: string | null; last_revised_at: string | null; next_revision_at: string | null; risk_level: string }
 export interface CurrentAffairsRetentionOverview { average_retention: number; high_risk_articles: CurrentAffairsRetention[]; due_for_revision: CurrentAffairsRetention[]; weak_subjects: Array<{ subject: string; score: number }>; weekly_trend: Array<{ date: string; percentage: number }>; saved_but_unrevised_article_ids: string[] }
+export interface PersonalizedIssue { issue_id: string; title: string; summary: string; subject: string; topic: string; importance_level: 'low' | 'medium' | 'high'; publication_date: string | null; prelims: string; mains: string; saved: boolean; score: number; reasons: string[]; source_tier: string; sources: Array<{ article_id: string; publisher: string; url: string; tier: string }> }
+export interface PersonalizedCurrentAffairs { effective_language: string; effective_depth: string; effective_format: string; exam_mode: string; daily_target_minutes: number; issues: PersonalizedIssue[]; top_stories: PersonalizedIssue[]; prelims_facts: PersonalizedIssue[]; mains_analysis: PersonalizedIssue[]; editorials: PersonalizedIssue[]; monthly_revision: PersonalizedIssue[]; saved_stories: PersonalizedIssue[]; revision_due: number; recommended_videos: Array<{ publisher: string; url: string; reason: string }> }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -333,6 +341,12 @@ export async function uploadPdf(file: File, signal?: AbortSignal): Promise<unkno
   return contentType.includes('application/json') ? response.json() : response.text()
 }
 
+export async function listPdfDocuments(): Promise<PdfDocument[]> {
+  const response = await fetch(`${API_BASE_URL}/pdf/documents`)
+  if (!response.ok) throw new Error(`Document library failed (${response.status})`)
+  return response.json()
+}
+
 async function roadmapRequest<T>(path = '', init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}/visual-roadmaps${path}`, init)
   if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string | { message?: string } } | null; const detail = typeof body?.detail === 'object' ? body.detail.message : body?.detail; throw new Error(detail || `Visual roadmap request failed (${response.status})`) }
@@ -364,10 +378,13 @@ export const getCurrentAffairsBrief = (date: string) => currentAffairsRequest<Cu
 export const getCurrentAffairsBriefOptional = createCachedOptionalLoader(getCurrentAffairsBrief, reason => reason instanceof CurrentAffairsApiError && reason.status === 404)
 export const saveCurrentAffairsArticle = (id: string, saved: boolean) => currentAffairsRequest<void>(`/articles/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
 export const getCurrentAffairsSummary = () => currentAffairsRequest<CurrentAffairsSummary>('/summary')
+export const getPersonalizedCurrentAffairs = (date?: string) => currentAffairsRequest<PersonalizedCurrentAffairs>(`/personalized${date ? `?date=${encodeURIComponent(date)}` : ''}`)
 export type CurrentAffairsQuizPeriod = 'daily' | 'weekly' | 'custom'
 export type CurrentAffairsQuizDifficulty = 'easy' | 'standard' | 'difficult'
 export interface CurrentAffairsQuizCreate { period_type: CurrentAffairsQuizPeriod; date_from: string; date_to: string; question_count: number; difficulty: CurrentAffairsQuizDifficulty }
 export const createCurrentAffairsQuiz = (payload: CurrentAffairsQuizCreate) => currentAffairsRequest<CurrentAffairsQuiz>('/quizzes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+export const getCurrentAffairsQuizzes = () => currentAffairsRequest<CurrentAffairsQuiz[]>('/quizzes')
+export const getCurrentAffairsQuizAttempts = (id: string) => currentAffairsRequest<CurrentAffairsQuizResult[]>(`/quizzes/${id}/attempts`)
 export const submitCurrentAffairsQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => currentAffairsRequest<CurrentAffairsQuizResult>(`/quizzes/${id}/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
 export const getCurrentAffairsRetentionOverview = () => currentAffairsRequest<CurrentAffairsRetentionOverview>('/retention/overview')
 export const markCurrentAffairsRevised = (id: string) => currentAffairsRequest<CurrentAffairsRetention>(`/retention/${id}/revise`, { method: 'POST' })

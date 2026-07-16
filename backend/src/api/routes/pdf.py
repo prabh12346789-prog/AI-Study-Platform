@@ -3,9 +3,15 @@ from datetime import datetime, timezone
 
 from src.activity.manager import ActivityManager
 from src.rag.manager import DocumentManager
+from src.schemas.pdf import PdfDocumentResponse
 
 router = APIRouter()
 activity_manager = ActivityManager()
+
+
+@router.get("/documents", response_model=list[PdfDocumentResponse])
+def list_pdf_documents():
+    return DocumentManager.list_documents()
 
 
 @router.post("/upload")

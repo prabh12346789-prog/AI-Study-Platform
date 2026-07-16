@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from src.core.config import settings
 from src.current_affairs.service import CurrentAffairsService
 from src.current_affairs.quiz_service import CurrentAffairsQuizService
+from src.current_affairs.personalization import PersonalizedCurrentAffairsService
 from src.schemas.current_affairs import ArticleResponse, CollectRequest, CollectResponse, DailyBriefResponse, DailyGenerateRequest
 from src.schemas.current_affairs_quiz import QuizCreate, QuizSubmission
 
@@ -127,3 +128,8 @@ def saved(): return [article_response(*item) for item in service().list_articles
 
 @router.get("/summary")
 def summary(): return service().dashboard_summary()
+
+
+@router.get("/personalized")
+def personalized(date: date | None = None):
+    return PersonalizedCurrentAffairsService().feed(date_value=date)

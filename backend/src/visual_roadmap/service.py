@@ -25,6 +25,7 @@ from src.visual_roadmap.renderer import render_svg
 
 
 class InsufficientContextError(ValueError): pass
+class RoadmapGenerationError(ValueError): pass
 
 
 class VisualRoadmapService:
@@ -67,9 +68,142 @@ class VisualRoadmapService:
         return result
 
     @staticmethod
-    def _json(text: str):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.I)
-        return json.loads(text)
+    def _first_json_object(text: str) -> str:
+        start = text.find("{")
+        if start < 0:
+            raise json.JSONDecodeError("No JSON object found", text, 0)
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            character = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+            if character == '"':
+                in_string = True
+            elif character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:index + 1]
+        raise json.JSONDecodeError("Unterminated JSON object", text, start)
+
+    @classmethod
+    def _json(cls, text: str):
+        cleaned = re.sub(r"```(?:json)?", "", text.strip(), flags=re.I).replace("```", "")
+        candidate = cls._first_json_object(cleaned)
+        candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
+        return json.loads(candidate)
+
+    @staticmethod
+    def _example(visual_type: str, sources: list[dict]) -> dict:
+        source = sources[0]
+        return {
+            "title": "Grounded topic roadmap",
+            "visual_type": visual_type,
+            "summary": "Concise summary supported by the retrieved context.",
+            "nodes": [
+                {"id": "n1", "label": "First grounded fact", "year": None,
+                 "description": "A fact copied or closely paraphrased from the context.",
+                 "importance": "", "source_ids": [source["id"]]},
+                {"id": "n2", "label": "Second grounded fact", "year": None,
+                 "description": "Another fact supported by the context.",
+                 "importance": "", "source_ids": [source["id"]]},
+            ],
+            "connections": [{"from": "n1", "to": "n2", "label": "leads to"}],
+            "exam_points": [],
+            "sources": sources,
+        }
+
+    @classmethod
+    def _prompt(cls, request: VisualRoadmapCreate, sources: list[dict], context: str) -> str:
+        example = cls._example(request.visual_type, sources)
+        return f"""Create one UPSC visual roadmap using ONLY the supplied grounded context.
+Return exactly one JSON object. Do not use Markdown fences. Do not write any explanation before or after JSON.
+Visual type must be exactly: {request.visual_type}
+Language: {request.language}
+Topic: {request.topic}
+
+The object must contain exactly these keys:
+title, visual_type, summary, nodes, connections, exam_points, sources
+Each node must contain exactly: id, label, year, description, importance, source_ids
+Each connection must contain exactly: from, to, label
+Use 2 to 8 nodes and at most 12 connections. Node IDs must be unique. Connections must reference existing node IDs.
+Every node must cite one or more supplied source IDs. Do not invent facts, dates, relationships, or sources.
+Copy the supplied sources array exactly. Keep labels under 90 characters and descriptions under 280 characters.
+
+Small valid {request.visual_type} example (shape only; do not copy its placeholder facts):
+{json.dumps(example, ensure_ascii=False)}
+
+Supplied sources array:
+{json.dumps(sources, ensure_ascii=False)}
+
+Grounded context:
+{context}
+"""
+
+    @staticmethod
+    def _validate_structure(data, request: VisualRoadmapCreate, sources: list[dict]) -> RoadmapStructure:
+        if not isinstance(data, dict):
+            raise ValueError("Roadmap output must be a JSON object")
+        root_keys = {"title", "visual_type", "summary", "nodes", "connections", "exam_points", "sources"}
+        if set(data) != root_keys:
+            raise ValueError("Roadmap output has missing or unknown root fields")
+        node_keys = {"id", "label", "year", "description", "importance", "source_ids"}
+        if any(not isinstance(node, dict) or set(node) != node_keys for node in data.get("nodes", [])):
+            raise ValueError("Roadmap node has missing or unknown fields")
+        connection_keys = {"from", "to", "label"}
+        if any(not isinstance(edge, dict) or set(edge) != connection_keys for edge in data.get("connections", [])):
+            raise ValueError("Roadmap connection has missing or unknown fields")
+        structure = RoadmapStructure.model_validate(data)
+        if structure.visual_type != request.visual_type:
+            raise ValueError("Generated visual type does not match request")
+        allowed = {source["id"] for source in sources}
+        if {source.id for source in structure.sources} != allowed:
+            raise ValueError("Roadmap contains unsupported source IDs")
+        return structure
+
+    @staticmethod
+    def _facts(text: str) -> list[str]:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        parts = re.split(r"(?<=[.!?])\s+|\s*[•|]\s*|\s+-\s+", normalized)
+        return [part.strip(" -•") for part in parts if len(part.strip(" -•")) >= 18]
+
+    @classmethod
+    def _fallback(cls, request: VisualRoadmapCreate, chunks: list[dict], sources: list[dict]) -> RoadmapStructure:
+        candidates = []
+        for index, chunk in enumerate(chunks):
+            for fact in cls._facts(str(chunk.get("text", "")))[:8]:
+                candidates.append((fact, sources[index]["id"]))
+        candidates = candidates[:8]
+        if not candidates:
+            raise RoadmapGenerationError("Malformed model output and grounded context could not produce a safe roadmap fallback.")
+        nodes = []
+        for index, (fact, source_id) in enumerate(candidates, start=1):
+            year_match = re.search(r"\b(?:1[5-9]\d{2}|20\d{2})\b", fact) if request.visual_type == "timeline" else None
+            label_text = re.split(r"[,:;]", fact, maxsplit=1)[0].strip()
+            nodes.append({
+                "id": f"n{index}", "label": label_text[:90],
+                "year": year_match.group(0) if year_match else None,
+                "description": fact[:280], "importance": "", "source_ids": [source_id],
+            })
+        connections = [
+            {"from": f"n{index}", "to": f"n{index + 1}",
+             "label": "followed by" if request.visual_type == "timeline" else "next"}
+            for index in range(1, len(nodes))
+        ]
+        return cls._validate_structure({
+            "title": request.topic[:180], "visual_type": request.visual_type,
+            "summary": "A deterministic roadmap assembled only from the retrieved grounded context.",
+            "nodes": nodes, "connections": connections, "exam_points": [], "sources": sources,
+        }, request, sources)
 
     async def create(self, request: VisualRoadmapCreate, user_id="user_001"):
         if request.conversation_id and not MemoryManager().get_conversation(request.conversation_id):
@@ -82,31 +216,38 @@ class VisualRoadmapService:
             raise InsufficientContextError("Insufficient trusted context. Upload a relevant PDF, enable/configure trusted web search, or choose another topic; no roadmap was generated.")
         sources = self._sources(chunks)
         context = "\n\n".join(f"[{sources[i]['id']}] {c['text']}" for i, c in enumerate(chunks))
-        prompt = f"""Create a UPSC visual roadmap using ONLY the retrieved context. Return JSON only, no markdown.
-Visual type: {request.visual_type}. Language: {request.language}. Topic: {request.topic}.
-Required keys: title, visual_type, summary, nodes, connections, exam_points, sources.
-Each node: id, label (max 90 chars), year or null, description (max 280 chars), importance, source_ids.
-Maximum 12 nodes. Every fact/year and every node must be supported by its source_ids. Connections use from, to, label and valid node IDs.
-Copy this exact sources array into the response: {json.dumps(sources)}
-Retrieved context:\n{context}"""
-        raw = await self.llm.generate(prompt=prompt, mode="learn", depth="standard")
+        prompt = self._prompt(request, sources, context)
         try:
-            data = self._json(raw)
-            structure = RoadmapStructure.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as first_error:
-            repair = f"Repair only the JSON syntax/schema of the following output. Do not add or change facts. Return JSON only. Error: {first_error}\nOUTPUT:\n{raw}"
-            raw = await self.llm.generate(prompt=repair, mode="learn", depth="quick")
-            structure = RoadmapStructure.model_validate(self._json(raw))
-        if structure.visual_type != request.visual_type: raise ValueError("Generated visual type does not match request")
-        allowed = {s["id"] for s in sources}
-        if {s.id for s in structure.sources} != allowed: raise ValueError("Roadmap contains unsupported source IDs")
+            raw = await self.llm.generate(prompt=prompt, mode="learn", depth="standard")
+        except Exception as error:
+            raise RoadmapGenerationError("Roadmap generation model is unavailable. Confirm Ollama and the configured model are installed.") from error
+        generation_method = "model"
+        try:
+            structure = self._validate_structure(self._json(raw), request, sources)
+        except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
+            repair = f"""Repair the output into exactly one JSON object matching this schema. Return JSON only; no fences or prose.
+Required root keys: title, visual_type, summary, nodes, connections, exam_points, sources.
+Required node keys: id, label, year, description, importance, source_ids.
+Required connection keys: from, to, label.
+Visual type must be {request.visual_type}. Use only these sources: {json.dumps(sources, ensure_ascii=False)}
+Do not add or change facts. Validation error: {first_error}
+Malformed output:
+{raw}"""
+            try:
+                repaired = await self.llm.generate(prompt=repair, mode="learn", depth="quick")
+                structure = self._validate_structure(self._json(repaired), request, sources)
+                generation_method = "model_repair"
+            except Exception:
+                structure = self._fallback(request, chunks, sources)
+                generation_method = "deterministic_fallback"
         roadmap_id = str(uuid.uuid4()); directory = self._directory(user_id, roadmap_id); directory.mkdir(parents=True)
         svg = render_svg(structure); svg_path = directory / "roadmap.svg"
         structure_data = structure.model_dump(by_alias=True, mode="json")
         (directory / "roadmap.json").write_text(json.dumps(structure_data, ensure_ascii=False, indent=2), encoding="utf-8")
         svg_path.write_text(svg, encoding="utf-8")
         (directory / "sources.json").write_text(json.dumps(sources, indent=2), encoding="utf-8")
-        metadata = {"roadmap_id": roadmap_id, "language": request.language, "scene_order": [n.id for n in structure.nodes], "narration_text": structure.summary}
+        metadata = {"roadmap_id": roadmap_id, "language": request.language, "generation_method": generation_method,
+            "scene_order": [n.id for n in structure.nodes], "narration_text": structure.summary}
         (directory / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         row = VisualRoadmap(id=roadmap_id, user_id=user_id, conversation_id=request.conversation_id,
             title=structure.title, subject=str(classification["subject"]), topic=str(classification["topic"]),
@@ -116,7 +257,8 @@ Retrieved context:\n{context}"""
             session.add(row); session.commit(); session.refresh(row)
         self.activity.record_event("visual_roadmap_generated", datetime.now(timezone.utc), user_id=user_id,
             conversation_id=request.conversation_id, subject=row.subject, topic=row.topic,
-            metadata_json={"roadmap_id": row.id, "visual_type": row.visual_type, "language": row.language})
+            metadata_json={"roadmap_id": row.id, "visual_type": row.visual_type, "language": row.language,
+                "generation_method": generation_method})
         return row
 
     def get(self, roadmap_id, user_id="user_001", opened=False):

@@ -8,6 +8,7 @@ Language = Literal["english", "hindi", "punjabi"]
 
 
 class RoadmapSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[A-Za-z0-9_-]+$", max_length=80)
     source_type: Literal["pdf", "web"] = "pdf"
     document: str | None = Field(default=None, max_length=255)
@@ -32,6 +33,7 @@ class RoadmapSource(BaseModel):
 
 
 class RoadmapNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[A-Za-z0-9_-]+$", max_length=40)
     label: str = Field(min_length=1, max_length=90)
     year: str | None = Field(default=None, max_length=24, pattern=r"^[0-9A-Za-z .,/\-–—]+$")
@@ -41,13 +43,14 @@ class RoadmapNode(BaseModel):
 
 
 class RoadmapConnection(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
     from_id: str = Field(alias="from", max_length=40)
     to: str = Field(max_length=40)
     label: str = Field(default="", max_length=60)
 
 
 class RoadmapStructure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=180)
     visual_type: VisualType
     summary: str = Field(min_length=1, max_length=360)

@@ -1,0 +1,39 @@
+import { useEffect, useMemo, useState } from 'react'
+import { createRoadmapQuiz, RoadmapQuiz, RoadmapQuizResult, submitRoadmapQuiz, VisualRoadmap } from './api'
+
+const quizCreationRequests = new Map<string, Promise<RoadmapQuiz>>()
+
+function createQuizOnce(roadmapId: string) {
+  const existing = quizCreationRequests.get(roadmapId)
+  if (existing) return existing
+  const request = createRoadmapQuiz(roadmapId).catch(reason => {
+    quizCreationRequests.delete(roadmapId)
+    throw reason
+  })
+  quizCreationRequests.set(roadmapId, request)
+  return request
+}
+
+export function RoadmapQuizPanel({ roadmap, onClose }: { roadmap: VisualRoadmap; onClose: () => void }) {
+  const [quiz, setQuiz] = useState<RoadmapQuiz | null>(null); const [result, setResult] = useState<RoadmapQuizResult | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({}); const [index, setIndex] = useState(0)
+  const [loading, setLoading] = useState(true); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState('')
+  async function load() { setLoading(true); setError(''); setResult(null); setAnswers({}); setIndex(0); try { setQuiz(await createQuizOnce(roadmap.id)) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Quiz generation failed.') } finally { setLoading(false) } }
+  useEffect(() => { void load() }, [roadmap.id])
+  const question = quiz?.questions[index]
+  const nodeNames = useMemo(() => new Map(roadmap.structure.nodes.map(node => [node.id, node.label])), [roadmap])
+  function choose(option: string) {
+    if (!question) return
+    if (question.question_type === 'sequence') {
+      const id = option.split(':')[0]; const current = (answers[question.id] || '').split(' | ').filter(Boolean)
+      if (!current.includes(id)) setAnswers({ ...answers, [question.id]: [...current, id].join(' | ') })
+    } else setAnswers({ ...answers, [question.id]: option })
+  }
+  async function submit() { if (!quiz) return; setSubmitting(true); setError(''); try { const value = await submitRoadmapQuiz(roadmap.id, quiz.questions.map(item => ({ question_id: item.id, answer: answers[item.id] || '' }))); setResult(value); window.dispatchEvent(new Event('mentor-data-changed')) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Quiz submission failed.') } finally { setSubmitting(false) } }
+  if (loading) return <section className="quiz-panel visual-state"><strong>Building recall questions from roadmap nodes…</strong><p>No new factual generation is used.</p></section>
+  if (error && !quiz) return <section className="quiz-panel visual-state error"><strong>Quiz unavailable</strong><p>{error}</p><button className="icon-button" onClick={() => void load()}>Retry</button><button className="icon-button" onClick={onClose}>Return to Roadmap</button></section>
+  if (!quiz || !question) return <section className="quiz-panel visual-state">No quiz questions are available.</section>
+  if (result) return <section className="quiz-panel"><header><p className="eyebrow">Recall quiz complete</p><h2>{result.score} of {result.total} · {result.percentage}%</h2></header><div className="quiz-result-grid"><article><h3>Answer review</h3>{[...result.correct_answers, ...result.incorrect_answers].map(item => <div className={item.correct ? 'quiz-correct' : 'quiz-incorrect'} key={item.question_id}><strong>{item.correct ? 'Correct' : 'Needs revision'}</strong><p>{item.explanation}</p>{!item.correct && <small>Correct answer: {item.correct_answer}</small>}</div>)}</article><article><h3>Weak roadmap sections</h3>{result.weak_source_nodes.length ? result.weak_source_nodes.map(id => <p key={id}>{nodeNames.get(id) || id}</p>) : <p>No weak nodes identified in this attempt.</p>}</article></div><div className="roadmap-actions"><button className="send-button" onClick={() => void load()}>Retake</button><button className="secondary-button" onClick={onClose}>Return to Roadmap</button></div></section>
+  const sequence = (answers[question.id] || '').split(' | ').filter(Boolean)
+  return <section className="quiz-panel"><header><p className="eyebrow">Roadmap recall</p><h2>Question {index + 1} of {quiz.questions.length}</h2><div className="quiz-progress"><i style={{ width: `${(index + 1) / quiz.questions.length * 100}%` }} /></div></header><article className="quiz-question"><small>{question.question_type.replace('_', ' ')} · {question.difficulty}</small><h3>{question.question}</h3>{question.question_type === 'sequence' && sequence.length > 0 && <p className="sequence-answer">Your order: {sequence.map(id => nodeNames.get(id) || id).join(' → ')}</p>}<div className="quiz-options">{question.options.map(option => <button key={option} className={question.question_type !== 'sequence' && answers[question.id] === option ? 'active' : ''} onClick={() => choose(option)}>{option.replace(/^[^:]+: /, '')}</button>)}</div>{question.question_type === 'sequence' && sequence.length > 0 && <button className="icon-button" onClick={() => setAnswers({ ...answers, [question.id]: '' })}>Clear order</button>}{!question.options.length && <textarea value={answers[question.id] || ''} onChange={event => setAnswers({ ...answers, [question.id]: event.target.value })} />}</article><div className="roadmap-actions"><button disabled={index === 0} onClick={() => setIndex(value => value - 1)}>Previous</button>{index < quiz.questions.length - 1 ? <button className="send-button" onClick={() => setIndex(value => value + 1)}>Next</button> : <button className="send-button" disabled={submitting} onClick={() => void submit()}>{submitting ? 'Submitting…' : 'Submit quiz'}</button>}<button className="secondary-button" onClick={onClose}>Return to Roadmap</button></div>{error && <p className="profile-state error">{error}</p>}</section>
+}

@@ -1,0 +1,6 @@
+/* Final narrow-screen guards for the Phase 3 chat workspace. */
+@media (max-width: 620px) {
+  .premium-shell .message-row { width: 100%; }
+  .premium-shell .message-row.assistant .message-card { flex: 1; width: auto; max-width: calc(100% - 46px); }
+  .premium-shell .assistant-trigger { right: 10px; width: 36px; height: 36px; justify-content: center; }
+}

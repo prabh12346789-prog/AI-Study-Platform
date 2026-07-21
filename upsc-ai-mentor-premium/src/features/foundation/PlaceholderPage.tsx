@@ -1,0 +1,2 @@
+import { ArrowRight, Sparkles } from 'lucide-react'
+export function PlaceholderPage({ title, description }: { title: string; description: string }) { return <section className="page"><div className="page-heading"><span className="eyebrow">PREMIUM WORKSPACE</span><h2>{title}</h2><p>{description}</p></div><div className="placeholder-card"><span className="placeholder-icon"><Sparkles /></span><div><h3>Foundation ready</h3><p>This feature will be connected to its existing backend contract in its controlled implementation phase.</p></div><ArrowRight /></div></section> }

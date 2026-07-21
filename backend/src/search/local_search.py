@@ -4,8 +4,18 @@ from src.rag.retriever import Retriever
 
 class LocalSearch:
 
-    def __init__(self):
-        self.retriever = Retriever()
+    def __init__(self, retriever=None):
+        self._retriever = retriever
+
+    @property
+    def retriever(self):
+        if self._retriever is None:
+            self._retriever = Retriever()
+        return self._retriever
+
+    @retriever.setter
+    def retriever(self, value):
+        self._retriever = value
 
     def search(self, question: str):
 

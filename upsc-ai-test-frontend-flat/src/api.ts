@@ -106,7 +106,28 @@ export interface RoadmapQuizQuestion { id: string; roadmap_id: string; question_
 export interface RoadmapQuiz { id: string; roadmap_id: string; difficulty: string; questions: RoadmapQuizQuestion[] }
 export interface RoadmapQuizResult { score: number; total: number; percentage: number; correct_answers: QuizAnswerResult[]; incorrect_answers: QuizAnswerResult[]; explanations: string[]; weak_source_nodes: string[] }
 export interface QuizAnswerResult { question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; source_node_ids: string[] }
-export interface CurrentAffairsArticle { id: string; title: string; summary: string; source_title: string; publisher: string; source_url: string; source_type: string; publication_date: string | null; retrieved_at: string; subject: string; topic: string; syllabus_tags_json: string[]; importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string; saved: boolean; opened: boolean }
+export interface ContentBlock {
+  type: 'heading' | 'subheading' | 'paragraph' | 'bullet' | 'bullet_list' | 'table' | 'key_fact' | 'prelims_point' | 'mains_point'
+  title?: string
+  text?: string
+  items?: string[]
+  headers?: string[]
+  rows?: string[][]
+  page_ref?: number
+}
+
+export interface CurrentAffairsArticle {
+  id: string; title: string; summary: string; source_title: string; publisher: string; source_url: string; source_type: string
+  publication_date: string | null; retrieved_at: string; subject: string; topic: string; syllabus_tags_json: string[]
+  importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string
+  saved: boolean; opened: boolean
+  slug?: string | null; cadence?: 'daily' | 'weekly' | 'monthly' | 'special' | null
+  content_type?: 'article' | 'compilation' | 'editorial' | 'prelims_qa' | 'mains_qa' | null
+  week_label?: string | null; month?: number | null; year?: number | null
+  pdf_url?: string | null; pdf_availability?: string | null; extraction_status?: string | null
+  content_blocks_json?: ContentBlock[] | null
+  qa_pairs_json?: Array<{ question: string; options?: string[]; answer?: string; explanation?: string; page_ref?: number; marks?: number; word_limit?: number }> | null
+}
 export interface CurrentAffairsBrief { id: string; brief_date: string; language: string; title: string; overview: string; article_ids_json: string[]; subject_breakdown_json: Record<string, string[]>; prelims_points_json: string[]; mains_points_json: string[]; updated_at: string }
 export interface CurrentAffairsSummary { unread_important_stories: number; top_subject: string | null; saved_articles: number; daily_brief_completed: boolean; today_quiz_completed: boolean; latest_quiz_score: number | null; high_risk_article_count: number; next_revision: string | null }
 export interface CurrentAffairsQuizQuestion { id: string; question_type: string; question: string; options_json: string[]; article_id: string; source_url: string; subject: string; topic: string; difficulty: string }
@@ -374,6 +395,25 @@ async function currentAffairsRequest<T>(path: string, init?: RequestInit): Promi
 export class CurrentAffairsApiError extends Error { constructor(public status: number, message: string) { super(message); this.name = 'CurrentAffairsApiError' } }
 export const getCurrentAffairsArticles = (params = '') => currentAffairsRequest<CurrentAffairsArticle[]>(`/articles${params ? `?${params}` : ''}`)
 export const getCurrentAffairsArticle = (id: string) => currentAffairsRequest<CurrentAffairsArticle>(`/articles/${id}`)
+export interface CurrentAffairsContentResponse {
+  id: string
+  slug: string
+  title: string
+  provider: string
+  cadence: string
+  subjects: string[]
+  publication_date: string | null
+  coverage_period: string
+  description: string
+  content_blocks: ContentBlock[]
+  page_references: string[]
+  source_page_url: string
+  official_pdf_url: string | null
+  extraction_status: 'ready' | 'pending' | 'image_only' | 'failed'
+  availability: 'available' | 'unavailable'
+  saved: boolean
+}
+export const getCurrentAffairsArticleContent = (id: string) => currentAffairsRequest<CurrentAffairsContentResponse>(`/${id}/content`)
 export const getCurrentAffairsBrief = (date: string) => currentAffairsRequest<CurrentAffairsBrief>(`/daily?date=${encodeURIComponent(date)}`)
 export const getCurrentAffairsBriefOptional = createCachedOptionalLoader(getCurrentAffairsBrief, reason => reason instanceof CurrentAffairsApiError && reason.status === 404)
 export const saveCurrentAffairsArticle = (id: string, saved: boolean) => currentAffairsRequest<void>(`/articles/${id}/save`, { method: saved ? 'DELETE' : 'POST' })

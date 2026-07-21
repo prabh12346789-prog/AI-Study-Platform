@@ -277,18 +277,27 @@ class CurrentAffairsService:
         embeddings = EmbeddingService.generate_embeddings([chunk]); VectorStore().store_current_affairs(row.id, [chunk], embeddings)
 
     def list_articles(self, *, user_id="user_001", date_value=None, date_from=None, date_to=None, subject=None,
-                      topic=None, importance=None, publisher=None, saved_only=False, search=None, include_rejected=False):
+                      topic=None, importance=None, publisher=None, saved_only=False, search=None, include_rejected=False,
+                      cadence=None, content_type=None, week_label=None, month=None, year=None):
         with self.sessions() as session:
             saved_ids = set(session.scalars(select(SavedCurrentAffairs.article_id).where(SavedCurrentAffairs.user_id == user_id)))
             query = select(CurrentAffairsArticle)
             if not include_rejected: query = query.where(CurrentAffairsArticle.status == "active")
+            if publisher:
+                query = query.where(CurrentAffairsArticle.publisher == publisher)
+            else:
+                query = query.where(CurrentAffairsArticle.publisher == "PWOnlyIAS")
             if date_value: query = query.where(CurrentAffairsArticle.publication_date == date_value)
             if date_from: query = query.where(CurrentAffairsArticle.publication_date >= date_from)
             if date_to: query = query.where(CurrentAffairsArticle.publication_date <= date_to)
             if subject: query = query.where(CurrentAffairsArticle.subject == subject)
             if topic: query = query.where(CurrentAffairsArticle.topic == topic)
             if importance: query = query.where(CurrentAffairsArticle.importance_level == importance)
-            if publisher: query = query.where(CurrentAffairsArticle.publisher == publisher)
+            if cadence: query = query.where(CurrentAffairsArticle.cadence == cadence)
+            if content_type: query = query.where(CurrentAffairsArticle.content_type == content_type)
+            if week_label: query = query.where(CurrentAffairsArticle.week_label == week_label)
+            if month: query = query.where(CurrentAffairsArticle.month == month)
+            if year: query = query.where(CurrentAffairsArticle.year == year)
             if saved_only: query = query.where(CurrentAffairsArticle.id.in_(saved_ids))
             if search:
                 pattern = f"%{search}%"; query = query.where(or_(CurrentAffairsArticle.title.ilike(pattern), CurrentAffairsArticle.summary.ilike(pattern)))
@@ -302,6 +311,112 @@ class CurrentAffairsService:
         if record_open: self.activity.record_event("current_affairs_opened", datetime.now(timezone.utc), user_id=user_id,
             subject=row.subject, topic=row.topic, metadata_json={"article_id": row.id})
         return row
+
+    def get_article_content(self, article_id, *, user_id="user_001"):
+        row = self.get_article(article_id, user_id=user_id, record_open=True)
+        if not row: return None
+        with self.sessions() as session:
+            saved = bool(session.scalar(select(SavedCurrentAffairs).where(
+                SavedCurrentAffairs.user_id == user_id, SavedCurrentAffairs.article_id == article_id)))
+
+        blocks = row.content_blocks_json or []
+        page_refs = sorted(list({
+            str(b["page_ref"]) for b in blocks if isinstance(b, dict) and b.get("page_ref") is not None
+        }))
+
+        mode = getattr(settings, "CURRENT_AFFAIRS_CONTENT_MODE", "private_local")
+        if mode == "public_summary":
+            blocks = [
+                {"type": "heading", "level": 2, "text": "Structured Study Summary"},
+                {"type": "paragraph", "text": row.summary or ""},
+                {"type": "heading", "level": 3, "text": "Prelims Key Facts"},
+                {"type": "paragraph", "text": row.relevance_prelims or ""},
+                {"type": "heading", "level": 3, "text": "Mains Analytical Dimensions"},
+                {"type": "paragraph", "text": row.relevance_mains or ""}
+            ]
+
+        ext_status = row.extraction_status or "ready"
+        if ext_status == "completed": ext_status = "ready"
+        avail = "available" if ext_status in ("ready", "completed") else "unavailable"
+        if ext_status == "image_only": avail = "unavailable"
+
+        return {
+            "id": row.id,
+            "slug": row.slug or row.id,
+            "title": row.title,
+            "provider": "PWOnlyIAS",
+            "cadence": row.cadence or "daily",
+            "subjects": [row.subject] if row.subject else ["General Studies"],
+            "publication_date": str(row.publication_date) if row.publication_date else None,
+            "coverage_period": row.week_label or (f"{row.month}/{row.year}" if row.month and row.year else "Current"),
+            "description": row.summary,
+            "content_blocks": blocks,
+            "page_references": page_refs,
+            "source_page_url": row.source_url,
+            "official_pdf_url": row.pdf_url,
+            "extraction_status": ext_status,
+            "availability": avail,
+            "saved": saved
+        }
+
+    @staticmethod
+    def extract_html_blocks(text: str) -> list[dict]:
+        blocks = []
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in lines:
+            if line.startswith("## ") or line.startswith("# "):
+                blocks.append({"type": "heading", "level": 2, "text": line.lstrip("# ").strip()})
+            elif line.startswith("### "):
+                blocks.append({"type": "heading", "level": 3, "text": line.lstrip("# ").strip()})
+            elif line.startswith("- ") or line.startswith("* "):
+                if blocks and blocks[-1].get("type") == "bullet_list":
+                    blocks[-1]["items"].append(line[2:].strip())
+                else:
+                    blocks.append({"type": "bullet_list", "items": [line[2:].strip()]})
+            else:
+                blocks.append({"type": "paragraph", "text": line})
+        return blocks
+
+    @staticmethod
+    def extract_pdf_blocks(pdf_file_path: str) -> tuple[list[dict], str]:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_file_path)
+        blocks, full_text = [], []
+        for idx, page in enumerate(reader.pages, start=1):
+            txt = page.extract_text() or ""
+            if txt.strip():
+                full_text.append(txt)
+                lines = [line.strip() for line in txt.splitlines() if line.strip()]
+                for line in lines:
+                    if len(line) < 80 and line.isupper():
+                        blocks.append({"type": "heading", "level": 2, "text": line, "page_start": idx, "page_end": idx, "page_ref": idx})
+                    else:
+                        blocks.append({"type": "paragraph", "text": line, "page_start": idx, "page_end": idx, "page_ref": idx})
+        combined = "\n".join(full_text)
+        status = "ready" if combined.strip() else "image_only"
+        return blocks, status
+
+    def backfill_records(self, limit=10, dry_run=False):
+        with self.sessions() as session:
+            query = select(CurrentAffairsArticle).where(
+                CurrentAffairsArticle.publisher == "PWOnlyIAS",
+                or_(CurrentAffairsArticle.content_blocks_json == None, CurrentAffairsArticle.extraction_status != "ready")
+            ).limit(limit)
+            rows = list(session.scalars(query))
+        processed = 0
+        for row in rows:
+            blocks = self.extract_html_blocks(f"{row.title}\n\n{row.summary}\n\nKey Facts:\n{row.relevance_prelims}\n\nMains Dimensions:\n{row.relevance_mains}")
+            row.content_blocks_json = blocks
+            row.extraction_status = "ready"
+            row.content_checksum = hashlib.sha256(json.dumps(blocks).encode()).hexdigest()
+            row.indexed_at = datetime.now(timezone.utc)
+            if not dry_run:
+                with self.sessions() as session:
+                    session.add(row); session.commit()
+                try: self._index(row)
+                except Exception as error: log.warning("Backfill index failed for %s: %s", row.id, error)
+            processed += 1
+        return {"total_found": len(rows), "processed": processed, "dry_run": dry_run}
 
     def save(self, article_id, *, user_id="user_001"):
         row = self.get_article(article_id, user_id=user_id, record_open=False)

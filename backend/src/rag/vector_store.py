@@ -129,9 +129,16 @@ class VectorStore:
 		for index, (chunk, _embedding) in enumerate(zip(chunks, embeddings)):
 			ids.append(f"current_affairs_{article_id}_{index}"); documents.append(chunk["text"])
 			metadatas.append({key: value for key, value in {
-				"source_type": "current_affairs", "article_id": article_id, "document_id": article_id,
-				"original_name": chunk.get("title"), "chunk_id": index, "publisher": chunk.get("publisher"),
-				"source_url": chunk.get("source_url"), "publication_date": chunk.get("publication_date") or "",
+				"source_type": "current_affairs", "article_id": article_id, "current_affairs_id": article_id,
+				"document_id": article_id, "original_name": chunk.get("title"), "title": chunk.get("title"),
+				"chunk_id": index, "publisher": chunk.get("publisher", "PWOnlyIAS"), "provider": "PWOnlyIAS",
+				"source_url": chunk.get("source_url"), "source_page_url": chunk.get("source_url"),
+				"official_pdf_url": chunk.get("official_pdf_url") or "",
+				"publication_date": chunk.get("publication_date") or "",
+				"cadence": chunk.get("cadence") or "daily",
+				"content_type": chunk.get("content_type") or "article",
+				"page_start": int(chunk.get("page_start") or 1),
+				"page_end": int(chunk.get("page_end") or 1),
 				"subject": chunk.get("subject"), "topic": chunk.get("topic"), "retrieved_at": chunk.get("retrieved_at"),
 				"content_hash": chunk.get("content_hash"), "word_count": len(chunk["text"].split()),
 				"embedding_model": settings.OLLAMA_EMBEDDING_MODEL,

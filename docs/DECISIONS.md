@@ -1,5 +1,13 @@
 # Architectural Decisions
 
+## Independent premium frontend
+
+- Date: 2026-07-16
+- Decision: Build the premium interface as a second frontend in `upsc-ai-mentor-premium`, sharing only the existing FastAPI contracts and leaving `upsc-ai-test-frontend-flat` unchanged.
+- Reason: Controlled phases need a clean feature-oriented foundation without risking regressions in the completed MVP interface.
+- Trade-off: Until later phases connect each feature, non-foundation routes show explicit placeholders rather than mock data.
+- Status: Accepted; Phase 1 complete
+
 ## Local-first generation
 
 - Date: Existing project decision; recorded 2026-07-14

@@ -37,6 +37,7 @@ APPROVED_DOMAINS = {
     "drishtiias.com": ("Drishti IAS", "approved_upsc_analysis", "trusted"),
     "iasscore.in": ("GS SCORE", "approved_upsc_analysis", "trusted"),
     "visionias.in": ("Vision IAS", "approved_upsc_analysis", "trusted"),
+    "pwonlyias.com": ("PWOnlyIAS", "approved_upsc_analysis", "trusted"),
     "un.org": ("United Nations", "international_institution", "trusted"),
     "worldbank.org": ("World Bank", "international_institution", "trusted"),
     "imf.org": ("International Monetary Fund", "international_institution", "trusted"),
@@ -215,7 +216,7 @@ class WebSearch:
                 for href, raw_title in anchors:
                     url, title = urljoin(response.url, html_lib.unescape(href)), self._clean(raw_title)
                     if len(title) < 18 or self.page_type(url) != "article" or not TrustedSourcePolicy.classify(url): continue
-                    if not re.search(r"(?:prid|id|articleid)=\d+|/20\d{2}/", url, re.I): continue
+                    if not re.search(r"(?:prid|id|articleid)=\d+|/20\d{2}/|/current-affairs/|/daily-current-affairs/", url, re.I): continue
                     candidates.append({"url": url, "title": title, "publication_date": None,
                         "source": listing["source"], "source_category": listing["category"], "discovery_method": "source_listing"})
                     found += 1

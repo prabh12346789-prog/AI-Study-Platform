@@ -82,11 +82,14 @@ async def collect(payload: CollectRequest, _=Depends(require_admin)):
 
 @router.get("/articles", response_model=list[ArticleResponse])
 def articles(date: date | None = None, date_from: date | None = None, date_to: date | None = None,
-             subject: str | None = None, topic: str | None = None, importance: str | None = None,
-             publisher: str | None = None, saved_only: bool = False, search: str | None = None):
+              subject: str | None = None, topic: str | None = None, importance: str | None = None,
+              publisher: str | None = None, saved_only: bool = False, search: str | None = None,
+              cadence: str | None = None, content_type: str | None = None, week_label: str | None = None,
+              month: int | None = None, year: int | None = None):
     return [article_response(*item) for item in service().list_articles(date_value=date, date_from=date_from,
         date_to=date_to, subject=subject, topic=topic, importance=importance, publisher=publisher,
-        saved_only=saved_only, search=search)]
+        saved_only=saved_only, search=search, cadence=cadence, content_type=content_type,
+        week_label=week_label, month=month, year=year)]
 
 
 @router.get("/articles/{article_id}", response_model=ArticleResponse)
@@ -95,6 +98,14 @@ def article(article_id: str):
     if not row: raise HTTPException(status_code=404, detail="Current-affairs article not found")
     saved = any(item[0].id == article_id for item in svc.list_articles(saved_only=True))
     return article_response(row, saved, True)
+
+
+@router.get("/{article_id}/content")
+@router.get("/articles/{article_id}/content")
+def article_content(article_id: str):
+    data = service().get_article_content(article_id)
+    if not data: raise HTTPException(status_code=404, detail="Current-affairs content not found")
+    return data
 
 
 @router.get("/daily", response_model=DailyBriefResponse)

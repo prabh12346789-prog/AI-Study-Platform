@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     CA_DAILY_MAX_RESULTS: int = 10
     CA_DAILY_LANGUAGE: str = "english"
     CA_DAILY_TIME: str = "07:00"
+    CURRENT_AFFAIRS_CONTENT_MODE: str = "private_local"
 
     @field_validator("DEBUG", mode="before")
     @classmethod

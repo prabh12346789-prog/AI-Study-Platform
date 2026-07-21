@@ -1,12 +1,13 @@
 import { BookOpen, BrainCircuit, FileText, Newspaper, RefreshCcw, Settings } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { ActivityOverview } from './ActivityOverview'
-import { CurrentAffairsArticle, CurrentAffairsQuizResult, CurrentAffairsRetentionOverview, PdfDocument, VisualRoadmap, getCurrentAffairsArticles, getCurrentAffairsQuizAttempts, getCurrentAffairsQuizzes, getCurrentAffairsRetentionOverview, getRoadmapQuiz, listPdfDocuments, listVisualRoadmaps } from './api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CurrentAffairsArticle, CurrentAffairsQuizResult, CurrentAffairsRetentionOverview, MasteryOverview as MasteryOverviewData, TopicMastery, ActivitySummary, PdfDocument, VisualRoadmap, getActivitySummary, getCurrentAffairsArticles, getCurrentAffairsQuizAttempts, getCurrentAffairsQuizzes, getCurrentAffairsRetentionOverview, getCurrentAffairsSummary, getRoadmapQuiz, getMasteryOverview, listMasteryTopics, listPdfDocuments, listVisualRoadmaps } from './api'
 import { CurrentAffairsQuizPanel } from './CurrentAffairsQuizPanel'
-import { MasteryOverview } from './MasteryOverview'
 import { MentorPlan } from './MentorPlan'
 import { ProfilePanel } from './ProfilePanel'
+import { MasteryOverview } from './MasteryOverview'
+import { ActivityOverview } from './ActivityOverview'
 import type { AppPage } from './AppShell'
+import { extractDailyTrend, formatStudyDuration, RevealSection, RiskDonutChart, StudyTrendChart, SubjectDonutChart } from './StudyCharts'
 
 function PageIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
   return <header className="page-intro"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{copy}</p></header>
@@ -56,7 +57,110 @@ export function RevisionPage({ trackingActive }: { trackingActive: boolean }) {
 }
 
 export function ProgressPage({ trackingActive }: { trackingActive: boolean }) {
-  return <div className="hub-page"><PageIntro eyebrow="Evidence, not vanity metrics" title="Progress" copy="Seven-day activity, mastery estimates, and revision risk from your real platform usage." /><ActivityOverview trackingActive={trackingActive} period="7d" /><RetentionSnapshot /><MasteryOverview /></div>
+  const [summary, setSummary] = useState<ActivitySummary | null>(null)
+  const [overview, setOverview] = useState<MasteryOverviewData | null>(null)
+  const [topics, setTopics] = useState<TopicMastery[]>([])
+  const [retention, setRetention] = useState<CurrentAffairsRetentionOverview | null>(null)
+  const [quizAttempts, setQuizAttempts] = useState<CurrentAffairsQuizResult[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [activityData, masteryData, masteryTopics, retentionData] = await Promise.all([
+        getActivitySummary('7d').catch(() => null),
+        getMasteryOverview().catch(() => null),
+        listMasteryTopics().catch(() => [] as TopicMastery[]),
+        getCurrentAffairsRetentionOverview().catch(() => null),
+      ])
+      setSummary(activityData)
+      setOverview(masteryData)
+      setTopics(masteryTopics)
+      setRetention(retentionData)
+
+      const quizzes = await getCurrentAffairsQuizzes().catch(() => [])
+      if (quizzes.length) {
+        const attemptsGroups = await Promise.all(quizzes.map((quiz) => getCurrentAffairsQuizAttempts(quiz.id).catch(() => [] as CurrentAffairsQuizResult[])))
+        setQuizAttempts(attemptsGroups.flat())
+      } else {
+        setQuizAttempts([])
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load progress data.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  const studyTrend = useMemo(() => (summary ? extractDailyTrend(summary) : null), [summary])
+  const mostStudiedSubject = summary?.subject_breakdown.slice().sort((a, b) => b.study_seconds - a.study_seconds)[0]
+  const asMostStudied = mostStudiedSubject ? `${mostStudiedSubject.name} · ${formatStudyDuration(mostStudiedSubject.study_seconds)}` : 'No subject study data yet.'
+  const attentionTopic = topics.slice().sort((a, b) => a.mastery_score - b.mastery_score)[0]
+  const averageQuizAccuracy = quizAttempts.length ? Math.round(quizAttempts.reduce((sum, item) => sum + item.percentage, 0) / quizAttempts.length) : null
+
+  return (
+    <div className="hub-page">
+      <PageIntro eyebrow="Evidence, not vanity metrics" title="Progress" copy="Seven-day activity, mastery estimates, and revision risk from your real platform usage." />
+      <section className="progress-summary-grid">
+        <article className="metric-card"><span>Total study time</span><strong>{summary ? formatStudyDuration(summary.total_study_seconds) : '—'}</strong><small>Last seven days from activity</small></article>
+        <article className="metric-card"><span>Weekly study</span><strong>{summary ? formatStudyDuration(summary.total_study_seconds) : '—'}</strong><small>Seven-day period summary</small></article>
+        <article className="metric-card"><span>Average mastery</span><strong>{overview ? `${Math.round(overview.average_mastery * 100)}%` : '—'}</strong><small>Estimated from mastery evidence</small></article>
+        <article className="metric-card"><span>High-risk topics</span><strong>{overview ? overview.high_risk_topics.length : '—'}</strong><small>Current revision risk</small></article>
+        {averageQuizAccuracy !== null ? <article className="metric-card"><span>Quiz accuracy</span><strong>{averageQuizAccuracy}%</strong><small>{quizAttempts.length} attempts</small></article> : null}
+        {retention ? <article className="metric-card"><span>Current Affairs retention</span><strong>{Math.round(retention.average_retention * 100)}%</strong><small>{retention.high_risk_articles.length} high-risk articles</small></article> : null}
+      </section>
+
+      <section className="progress-charts-row">
+        <StudyTrendChart data={studyTrend ?? []} />
+        <div className="progress-side-charts">
+          <SubjectDonutChart breakdown={summary?.subject_breakdown ?? []} />
+          <RiskDonutChart topics={topics} />
+        </div>
+      </section>
+
+      <section className="progress-section">
+        <header className="section-heading"><div><span className="eyebrow">Subject analysis</span><h2>Study and mastery by subject</h2></div></header>
+        <div className="subject-insights">
+          <article className="summary-card"><span>Most studied subject</span><strong>{asMostStudied}</strong></article>
+          <article className="summary-card"><span>Subject needing attention</span><strong>{attentionTopic ? `${attentionTopic.subject} · ${Math.round(attentionTopic.mastery_score * 100)}%` : 'No topic-level evidence'}</strong></article>
+        </div>
+        <div className="subject-bars">
+          {overview?.subject_breakdown?.length ? overview.subject_breakdown.map((item) => (
+            <div key={item.subject} className="subject-bar-row"><span>{item.subject}</span><i><b style={{ width: `${Math.max(6, item.mastery_score * 100)}%` }} /></i><small>{Math.round(item.mastery_score * 100)}%</small></div>
+          )) : <div className="profile-state">No subject mastery breakdown available yet.</div>}
+        </div>
+      </section>
+
+      <section className="progress-section">
+        <header className="section-heading"><div><span className="eyebrow">Quiz analysis</span><h2>Current Affairs performance</h2></div></header>
+        {quizAttempts.length ? (
+          <div className="quiz-summary"><p>{quizAttempts.length} total attempts · Average accuracy {averageQuizAccuracy}%</p><div className="quiz-attempt-list">{quizAttempts.slice(-3).map((attempt, index) => (
+            <article key={`${attempt.id}-${index}`}><strong>{attempt.score}/{attempt.total}</strong><p>{attempt.percentage}%</p></article>
+          ))}</div></div>
+        ) : <div className="profile-state">No quiz performance history is available yet.</div>}
+      </section>
+
+      <section className="progress-section">
+        <header className="section-heading"><div><span className="eyebrow">Forgetting risk analysis</span><h2>Topic-level revision risk</h2></div></header>
+        {topics.length ? (
+          <div className="topic-list">{topics.slice(0, 5).map((topic) => (
+            <article key={topic.id} className="topic-row"><div><span>{topic.subject}</span><em className={`risk-pill risk-${topic.risk_level}`}>{topic.risk_level}</em></div><h3>{topic.topic}</h3><div className="attention-bar"><div style={{ width: `${Math.max(6, topic.mastery_score * 100)}%` }} /></div><small>{Math.round(topic.mastery_score * 100)}% mastery · Last revised: {topic.last_revised_at ? new Date(topic.last_revised_at).toLocaleDateString() : 'Unknown'}</small></article>
+          ))}</div>
+        ) : <div className="profile-state">No topic-level forgetting risk data is available yet.</div>}
+      </section>
+
+      <section className="progress-section">
+        <header className="section-heading"><div><span className="eyebrow">Current Affairs retention</span><h2>Retention and revision due</h2></div></header>
+        {retention ? (
+          <div className="retention-summary"><p>{retention.due_for_revision.length} articles due for revision.</p><p>{retention.high_risk_articles.length} articles at high risk.</p><p>{retention.average_retention != null ? `Average retention ${Math.round(retention.average_retention * 100)}%` : 'Average retention unavailable.'}</p></div>
+        ) : <div className="profile-state">No Current Affairs retention data is available yet.</div>}
+      </section>
+    </div>
+  )
 }
 
 export function ProfilePage({ settings = false }: { settings?: boolean }) {

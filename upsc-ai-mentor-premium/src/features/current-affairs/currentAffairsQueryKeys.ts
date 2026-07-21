@@ -1,0 +1,1 @@
+export const currentAffairsKeys={all:['current-affairs'] as const,articles:(filters:object)=>['current-affairs','articles',filters] as const,personalized:(date?:string)=>['current-affairs','personalized',date??'latest'] as const,daily:(date?:string,language?:string)=>['current-affairs','daily',date,language] as const,retention:['current-affairs','retention'] as const}

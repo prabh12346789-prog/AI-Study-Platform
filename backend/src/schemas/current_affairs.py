@@ -45,6 +45,11 @@ class ArticleResponse(BaseModel):
     publication_date: date | None; retrieved_at: datetime; subject: str; topic: str; syllabus_tags_json: list
     importance_level: Literal["low", "medium", "high"]; relevance_prelims: str; relevance_mains: str
     content_hash: str; status: Literal["active", "archived", "rejected"]; created_at: datetime; updated_at: datetime
+    slug: str | None = None; cadence: str | None = "daily"; content_type: str | None = "article"
+    week_label: str | None = None; month: int | None = None; year: int | None = None
+    pdf_url: str | None = None; pdf_availability: str | None = "unknown"
+    extraction_status: str | None = "completed"; content_blocks_json: list | None = None
+    qa_pairs_json: list | None = None
     saved: bool = False; opened: bool = False
 
 

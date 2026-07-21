@@ -33,13 +33,33 @@ class VisualRoadmapService:
 
     def __init__(self, db_path=None, retriever=None, llm=None, activity_manager=None, base_dir=None, search_provider=None):
         self.sessions = get_session_factory(db_path)
-        self.retriever = retriever or Retriever()
-        local_search = LocalSearch(); local_search.retriever = self.retriever
-        self.search_provider = search_provider or SearchProvider(local_search=local_search)
+        self._retriever = retriever
+        self._search_provider = search_provider
         self.llm = llm or get_llm()
         self.activity = activity_manager or ActivityManager(db_path)
         self.classifier = SubjectTopicClassifier()
         self.base_dir = Path(base_dir) if base_dir else self.BASE_DIR
+
+    @property
+    def retriever(self):
+        if self._retriever is None:
+            try:
+                self._retriever = Retriever()
+            except Exception:
+                self._retriever = None
+        return self._retriever
+
+    @property
+    def search_provider(self):
+        if self._search_provider is None:
+            try:
+                local_search = LocalSearch()
+                if self.retriever:
+                    local_search.retriever = self.retriever
+                self._search_provider = SearchProvider(local_search=local_search)
+            except Exception:
+                self._search_provider = None
+        return self._search_provider
 
     def _directory(self, user_id: str, roadmap_id: str) -> Path:
         if not re.fullmatch(r"[A-Za-z0-9_-]+", user_id) or not re.fullmatch(r"[A-Za-z0-9_-]+", roadmap_id):

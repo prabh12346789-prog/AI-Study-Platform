@@ -1,0 +1,1 @@
+export function LoadingSkeleton({ lines = 3 }: { lines?: number }) { return <div className="skeleton" aria-label="Loading" role="status">{Array.from({ length: lines }, (_, index) => <span key={index} />)}</div> }

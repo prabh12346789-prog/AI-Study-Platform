@@ -1,52 +1,239 @@
-import { useCallback, useEffect, useState } from 'react'
-import { CurrentAffairsArticle, CurrentAffairsBrief, CurrentAffairsSummary, getCurrentAffairsArticles, getCurrentAffairsBriefOptional, getCurrentAffairsSummary, getMentorDashboard, listVisualRoadmaps, MentorDashboardData, regenerateMentorActions, updateMentorAction, VisualRoadmap } from './api'
-import { VideoRecommendations } from './VideoRecommendations'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BookOpen, Newspaper, RefreshCcw, Sparkles } from 'lucide-react'
+import {
+  ActivitySummary,
+  CurrentAffairsArticle,
+  CurrentAffairsSummary,
+  PdfDocument,
+  VisualRoadmap,
+  getActivitySummary,
+  getCurrentAffairsArticles,
+  getCurrentAffairsSummary,
+  getMentorDashboard,
+  listPdfDocuments,
+  listVisualRoadmaps,
+  MentorDashboardData,
+} from './api'
 import type { AppPage } from './AppShell'
+import {
+  extractDailyTrend,
+  formatStudyDuration,
+  RevealSection,
+  SubjectDonutChart,
+  StudyTrendChart,
+} from './StudyCharts'
 
-const minutes = (seconds: number) => `${Math.floor(seconds / 60)}m`
+const riskOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+
+function formatGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function isMeaningfulEvent(event: { event_type: string }) {
+  return event.event_type !== 'system' && event.event_type !== 'heartbeat'
+}
 
 export function MentorDashboard({ trackingActive, onNavigate }: { trackingActive: boolean; onNavigate?: (page: AppPage) => void }) {
   const [data, setData] = useState<MentorDashboardData | null>(null)
+  const [activity, setActivity] = useState<ActivitySummary | null>(null)
   const [currentAffairs, setCurrentAffairs] = useState<CurrentAffairsSummary | null>(null)
   const [currentArticles, setCurrentArticles] = useState<CurrentAffairsArticle[]>([])
-  const [dailyBrief, setDailyBrief] = useState<CurrentAffairsBrief | null>(null)
+  const [pdfs, setPdfs] = useState<PdfDocument[]>([])
   const [roadmaps, setRoadmaps] = useState<VisualRoadmap[]>([])
-  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [updated, setUpdated] = useState<Date | null>(null); const [why, setWhy] = useState(false); const [feedback, setFeedback] = useState('')
-  const refresh = useCallback(async () => { setLoading(true); setError(''); try { const [dashboard, current, articles, visualRoadmaps] = await Promise.all([getMentorDashboard(), getCurrentAffairsSummary().catch(() => null), getCurrentAffairsArticles().catch(() => []), listVisualRoadmaps().catch(() => [])]); const latestDate = articles[0]?.publication_date || articles[0]?.retrieved_at.slice(0, 10); setData(dashboard); setCurrentAffairs(current); setCurrentArticles(articles.slice(0, 4)); setRoadmaps(visualRoadmaps.slice(0, 3)); setDailyBrief(latestDate ? await getCurrentAffairsBriefOptional(latestDate) : null); setUpdated(new Date()) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.') } finally { setLoading(false) } }, [])
-  useEffect(() => { void refresh() }, [refresh])
-  useEffect(() => { const listener = () => void refresh(); window.addEventListener('mentor-data-changed', listener); return () => window.removeEventListener('mentor-data-changed', listener) }, [refresh])
-  async function act(operation: 'accept' | 'complete' | 'skip') {
-    const action = data?.recommendations.primary; if (!action || operation === 'skip' && !window.confirm('Skip this recommendation?')) return
-    try { await updateMentorAction(action.id, operation); setFeedback(operation === 'complete' ? 'Completed.' : operation === 'accept' ? 'Started.' : 'Skipped.'); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to update action.') }
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [updated, setUpdated] = useState<Date | null>(null)
+  const detailsRef = useRef<HTMLDivElement | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [dashboard, summary, current, articles, pdfDocuments, visualRoadmaps] = await Promise.all([
+        getMentorDashboard(),
+        getActivitySummary('7d'),
+        getCurrentAffairsSummary().catch(() => null),
+        getCurrentAffairsArticles().catch(() => []),
+        listPdfDocuments().catch(() => []),
+        listVisualRoadmaps().catch(() => []),
+      ])
+      setData(dashboard)
+      setActivity(summary)
+      setCurrentAffairs(current)
+      setCurrentArticles(articles.slice(0, 3))
+      setPdfs(pdfDocuments.slice(0, 3))
+      setRoadmaps(visualRoadmaps.slice(0, 3))
+      setUpdated(new Date())
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  useEffect(() => {
+    const listener = () => void refresh()
+    window.addEventListener('mentor-data-changed', listener)
+    return () => window.removeEventListener('mentor-data-changed', listener)
+  }, [refresh])
+
+  const studyTrend = useMemo(() => (activity ? extractDailyTrend(activity) : null), [activity])
+  const totalWeeklyStudySeconds = activity?.total_study_seconds ?? 0
+  const subjectBreakdown = activity?.subject_breakdown ?? []
+
+  const attentionTopics = useMemo(() => {
+    if (!data) return []
+    const items = data.mastery.high_risk_topics.length ? data.mastery.high_risk_topics : data.mentor_brief.weaknesses
+    return [...items]
+      .sort((a, b) => (riskOrder[a.risk_level] ?? 4) - (riskOrder[b.risk_level] ?? 4) || a.mastery_score - b.mastery_score)
+      .slice(0, 4)
+  }, [data])
+
+  const recentActivity = useMemo(() => {
+    if (!data) return []
+    const seen = new Set<string>()
+    return data.recent_activity.filter((event) => {
+      if (!isMeaningfulEvent(event)) return false
+      const key = `${event.event_type}|${event.subject ?? ''}|${event.topic ?? ''}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, 5)
+  }, [data])
+
+  const action = data?.recommendations.primary
+  const targetSeconds = data?.profile.daily_target_minutes ? data.profile.daily_target_minutes * 60 : 0
+  const studySecondsToday = data?.today?.study_seconds ?? 0
+  const targetProgress = targetSeconds ? Math.min(100, Math.round(studySecondsToday / targetSeconds * 100)) : 0
+  const targetText = targetSeconds ? `${Math.round(studySecondsToday / 60)}m of ${data?.profile.daily_target_minutes}m` : 'No daily target set'
+
+  const scrollToDetails = () => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    detailsRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
   }
-  async function regenerate() { try { await regenerateMentorActions(); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to refresh plan.') } }
+
   if (loading) return <section className="mentor-dashboard dashboard-skeleton">Loading Mentor Intelligence…</section>
   if (error && !data) return <section className="mentor-dashboard profile-state error">{error}<button className="icon-button" onClick={() => void refresh()}>Retry</button></section>
   if (!data) return null
-  const action = data.recommendations.primary
-  const target = data.profile.daily_target_minutes * 60
-  const progress = Math.min(100, target ? data.today.study_seconds / target * 100 : 0)
-  return <section className="mentor-dashboard">
-    <section className="mentor-hero"><div><p className="eyebrow">Your personal mentor</p><h1>Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, Prabhsimran.</h1><p>{data.mentor_brief.summary}</p><div className="hero-actions"><button className="send-button" onClick={() => onNavigate?.('chat')}>Ask AI Mentor</button><button className="icon-button" onClick={() => onNavigate?.('current_affairs')}>Today’s Current Affairs</button><button className="icon-button" onClick={() => onNavigate?.('revision')}>Quick Revision</button></div></div><div className="hero-progress"><strong>{Math.round(progress)}%</strong><span>of today’s target</span><i><b style={{ width: `${progress}%` }} /></i></div></section>
-    <header className="dashboard-head"><div><p className="eyebrow">Mentor Intelligence</p><h2>{data.mentor_brief.summary}</h2><small>{trackingActive ? '● Active study tracking' : '○ Tracking paused'} · Updated {updated?.toLocaleTimeString()}</small></div><button className="icon-button" onClick={() => void refresh()}>Refresh dashboard</button></header>
-    <div className="dashboard-highlight-metrics"><article><span>Today’s active study</span><strong>{minutes(data.today.study_seconds)}</strong><small>{Math.round(progress)}% of target</small></article><article><span>Questions today</span><strong>{data.today.questions_asked}</strong><small>Activity, not mastery</small></article><article><span>Topics progressing</span><strong>{data.mastery.subject_breakdown.length}</strong><small>With reliable evidence</small></article><article><span>Average mastery</span><strong>{Math.round(data.mastery.average_mastery * 100)}%</strong><small>Estimated learning strength</small></article></div>
-    <div className="dashboard-priority-row">
-      <article className="dashboard-action dashboard-action-featured"><p className="eyebrow">Primary mentor action</p>{action ? <><h3>{action.title}</h3><div><span>{action.subject} · {action.topic}</span><em>{action.priority_level} · {action.estimated_minutes} min</em></div><p>{action.reason[0]}</p><div className="profile-actions"><button className="send-button" onClick={() => void act('accept')}>Start</button><button className="icon-button" onClick={() => void act('complete')}>Complete</button><button className="icon-button" onClick={() => void act('skip')}>Skip</button></div></> : <><h3>Your plan is clear</h3><p>No immediate recommendation. Complete a reliable quiz or revision to generate the next action.</p><button className="icon-button" onClick={() => onNavigate?.('revision')}>Open Revision Center</button></>}</article>
-      <article className="current-affairs-spotlight"><div><p className="eyebrow">Current Affairs</p><span className="ca-date">{currentArticles[0]?.publication_date ?? 'Latest accepted content'}</span></div>{currentArticles[0] ? <><h3>{currentArticles[0].title}</h3><p>{currentArticles[0].publisher} · {currentArticles[0].subject}</p><div className="spotlight-status"><span>{dailyBrief ? 'Daily brief ready' : 'Brief not available'}</span><span>{currentAffairs?.today_quiz_completed ? 'Quiz complete' : 'Quiz available'}</span><span>{currentAffairs?.high_risk_article_count ?? 0} retention risks</span></div></> : <><h3>No accepted stories yet</h3><p>Collect trusted Current Affairs content to activate this section.</p></>}<button className="icon-button" onClick={() => onNavigate?.('current_affairs')}>Open Current Affairs</button></article>
-    </div>
-    <button className="scroll-for-more" onClick={() => document.querySelector('.dashboard-lower')?.scrollIntoView({ behavior: 'smooth' })}>↓ Explore your complete study dashboard</button>
-    <div className="dashboard-grid">
-      <div className="dashboard-main">
-        <div className="dashboard-metrics"><article><span>Active study</span><strong>{minutes(data.today.study_seconds)}</strong><small>{Math.round(progress)}% of daily target</small><i><b style={{ width: `${progress}%` }} /></i></article><article><span>Questions</span><strong>{data.today.questions_asked}</strong><small>Questions indicate activity, not mastery.</small></article><article><span>Subjects</span><strong>{data.today.subjects_studied}</strong><small>{data.today.top_subject ? `${data.today.top_subject} led today.` : 'Start studying to build a pattern.'}</small></article></div>
-        <article className="dashboard-action"><p className="eyebrow">Primary next action</p>{action ? <><h3>{action.title}</h3><div><span>{action.subject} · {action.topic}</span><em>{action.priority_level} · {action.estimated_minutes} min</em></div><p>{action.reason[0]}</p><button className="why-button" aria-expanded={why} onClick={() => setWhy(value => !value)}>Why this recommendation?</button>{why && <ul className="why-details">{action.reason.map(reason => <li key={reason}>{reason}</li>)}</ul>}<div className="profile-actions"><button className="send-button" onClick={() => void act('accept')}>Start</button><button className="icon-button" onClick={() => void act('complete')}>Complete</button><button className="icon-button" onClick={() => void act('skip')}>Skip</button><button className="icon-button" onClick={() => void regenerate()}>Regenerate</button></div></> : <p>No immediate recommendation. Reliable quiz, recall, and revision evidence will create a plan.</p>}</article>
-        <article className="dashboard-card"><h3>Recent activity</h3>{data.recent_activity.length ? data.recent_activity.slice(0, 5).map(event => <p key={event.id}>{event.event_type.replaceAll('_', ' ')} · {event.topic ?? event.subject ?? 'General'}</p>) : <p>No activity recorded today.</p>}</article>
+
+  return (
+    <section className="mentor-dashboard">
+      <div className="dashboard-hero">
+        <div>
+          <p className="eyebrow">Mentor wireframe</p>
+          <h1>{formatGreeting()}</h1>
+          <p>{data.mentor_brief.summary}</p>
+          <div className="hero-actions">
+            <button className="send-button" onClick={() => onNavigate?.('chat')}>Continue Studying</button>
+            <button className="secondary-button" onClick={() => onNavigate?.('revision')}>Quick Revision</button>
+            <button className="secondary-button" onClick={() => onNavigate?.('chat')}>Ask AI Coach</button>
+          </div>
+        </div>
+        <div className="hero-progress-card">
+          <span className="eyebrow">Daily target progress</span>
+          <strong>{targetProgress ? `${targetProgress}%` : '—'}</strong>
+          <p>{targetText}</p>
+          <div className="progress-track"><div className="progress-fill" style={{ width: `${targetProgress}%` }} /></div>
+          {action?.estimated_minutes ? <small>Estimated action time: {action.estimated_minutes} min</small> : null}
+          <small>{trackingActive ? 'Active tracking enabled' : 'Study tracking paused'}</small>
+        </div>
       </div>
-      <aside className="dashboard-side"><article><h3>Strengths</h3>{data.mentor_brief.strengths.slice(0, 3).map(item => <p key={item.id}>{item.topic} · {Math.round(item.mastery_score * 100)}%</p>)}{!data.mentor_brief.strengths.length && <p>More evidence needed.</p>}</article><article><h3>Needs attention</h3>{data.mentor_brief.weaknesses.slice(0, 3).map(item => <p key={item.id}>{item.topic} needs practice.</p>)}</article><article><h3>Likely to forget</h3>{data.mentor_brief.likely_to_forget.slice(0, 3).map(item => <p key={item.id}>{item.topic} · {item.risk_level} risk</p>)}</article><article><h3>Your preferences</h3><p>{data.profile.preferred_language} · {data.profile.preferred_depth} · {data.profile.preferred_format}</p></article></aside>
-    </div>
-    <div className="dashboard-lower"><article><h3>Subject mastery</h3>{data.mastery.subject_breakdown.map(item => <div className="dash-bar" key={item.subject}><span>{item.subject}</span><i><b style={{ width: `${item.mastery_score * 100}%` }} /></i><small>{Math.round(item.mastery_score * 100)}% — {item.mastery_score < .5 ? 'needs attention' : 'building well'}</small></div>)}</article><article><h3>Study-time breakdown</h3>{data.today.subject_breakdown.map(item => <div className="dash-bar" key={item.name}><span>{item.name}</span><i><b style={{ width: `${Math.max(3, data.today.study_seconds ? item.study_seconds / data.today.study_seconds * 100 : 3)}%` }} /></i><small>{minutes(item.study_seconds)}</small></div>)}</article><article><h3>Revision risk</h3><p>{data.mastery.high_risk_topics.length} high-risk topics. {data.mastery.high_risk_topics[0] ? `Review ${data.mastery.high_risk_topics[0].topic} first.` : 'No urgent revision risk detected.'}</p><h3>Alternatives</h3>{data.recommendations.alternatives.map(item => <p key={item.id}>{item.title} · {item.estimated_minutes}m</p>)}</article></div>
-    <article className="dashboard-card ca-dashboard-card"><h3>Current Affairs</h3>{currentAffairs ? <><div className="ca-dashboard-stats"><span><strong>{currentAffairs.today_quiz_completed ? 'Complete' : 'Pending'}</strong><small>Today’s quiz</small></span><span><strong>{currentAffairs.latest_quiz_score == null ? '—' : `${currentAffairs.latest_quiz_score}%`}</strong><small>Latest score</small></span><span><strong>{currentAffairs.high_risk_article_count}</strong><small>High-risk articles</small></span><span><strong>{currentAffairs.next_revision ? new Date(currentAffairs.next_revision).toLocaleDateString() : '—'}</strong><small>Next revision</small></span></div><p>Quick action: {currentAffairs.high_risk_article_count ? 'Revise a high-risk article.' : 'Take today’s grounded quiz.'}</p></> : <p>No current-affairs summary available.</p>}<small>Reading alone never changes mastery or retention.</small></article>
-    <section className="dashboard-resource-row"><article className="dashboard-card roadmap-dashboard-card"><div><p className="eyebrow">Visual Learning</p><button className="why-button" onClick={() => onNavigate?.('visual')}>View all</button></div><h3>{roadmaps[0]?.title ?? 'No roadmap generated yet'}</h3>{roadmaps.length ? roadmaps.map(roadmap => <p key={roadmap.id}>{roadmap.title} · {roadmap.visual_type.replaceAll('_', ' ')}</p>) : <p>Generate a grounded visual roadmap from your indexed study material.</p>}<button className="icon-button" onClick={() => onNavigate?.('visual')}>{roadmaps.length ? 'Open Visual Learning' : 'Generate Roadmap'}</button></article><article className="dashboard-card activity-dashboard-card"><p className="eyebrow">Latest activity</p><h3>{data.recent_activity[0]?.event_type.replaceAll('_', ' ') ?? 'No activity today'}</h3><p>{data.recent_activity[0]?.topic ?? data.recent_activity[0]?.subject ?? 'Start an AI study session to build your timeline.'}</p><button className="icon-button" onClick={() => onNavigate?.('progress')}>View Progress</button></article></section>
-    <VideoRecommendations subject={action?.subject ?? data.today.top_subject} topic={action?.topic ?? data.today.top_topic} initial={data.recommended_videos} />
-    {feedback && <div className="saved-state">{feedback}</div>}{error && <div className="profile-state error">{error}</div>}<p className="privacy-note">Mentor insights are estimates based on your study activity, quiz evidence, revision history and saved preferences.</p>
-  </section>
+
+      <div className="summary-grid">
+        <article className="metric-card"><span>Study time today</span><strong>{formatStudyDuration(data.today.study_seconds)}</strong><small>{targetText}</small></article>
+        <article className="metric-card"><span>Study time last 7 days</span><strong>{formatStudyDuration(totalWeeklyStudySeconds)}</strong><small>From real activity history</small></article>
+        <article className="metric-card"><span>Average mastery</span><strong>{data.mastery.average_mastery != null ? `${Math.round(data.mastery.average_mastery * 100)}%` : '—'}</strong><small>Estimated from mastery evidence</small></article>
+        <article className="metric-card"><span>High-risk topics</span><strong>{data.mastery.high_risk_topics.length}</strong><small>Urgent revision focus</small></article>
+      </div>
+
+      <div className="chart-row">
+        <StudyTrendChart data={studyTrend ?? []} />
+        <SubjectDonutChart breakdown={subjectBreakdown} />
+      </div>
+
+      <div className="scroll-indicator"><button className="secondary-button" onClick={scrollToDetails}>Explore detailed progress and recommendations</button></div>
+
+      <div ref={detailsRef} className="dashboard-details">
+        <RevealSection className="dashboard-section attention-section">
+          <header className="section-heading"><div><span className="eyebrow">Subjects requiring attention</span><h2>Urgent review topics</h2></div><button className="secondary-button" onClick={() => onNavigate?.('revision')}>Open Revision Center</button></header>
+          {attentionTopics.length ? attentionTopics.map((topic) => (
+            <article key={topic.id} className="attention-card">
+              <div><span>{topic.subject}</span><em className={`risk-pill risk-${topic.risk_level}`}>{topic.risk_level}</em></div>
+              <h3>{topic.topic}</h3>
+              <div className="attention-bar"><div style={{ width: `${Math.max(6, topic.mastery_score * 100)}%` }} /></div>
+              <small>{topic.mastery_score != null ? `${Math.round(topic.mastery_score * 100)}% mastery` : 'Mastery unavailable'}</small>
+              {topic.explanation?.[0] ? <p>{topic.explanation[0]}</p> : null}
+            </article>
+          )) : <div className="profile-state">No urgent revision topics are available yet.</div>}
+        </RevealSection>
+
+        <RevealSection className="dashboard-section actions-section">
+          <header className="section-heading"><div><span className="eyebrow">Quick actions</span><h2>Move faster</h2></div></header>
+          <div className="action-grid">
+            <button className="route-button" onClick={() => onNavigate?.('chat')}><Sparkles size={18} /><span>Ask AI Coach</span></button>
+            <button className="route-button" onClick={() => onNavigate?.('revision')}><RefreshCcw size={18} /><span>Start Revision</span></button>
+            <button className="route-button" onClick={() => onNavigate?.('quizzes')}><BookOpen size={18} /><span>Take Quiz</span></button>
+            <button className="route-button" onClick={() => onNavigate?.('current_affairs')}><Newspaper size={18} /><span>View Current Affairs</span></button>
+          </div>
+        </RevealSection>
+
+        <RevealSection className="dashboard-section summary-section">
+          <header className="section-heading"><div><span className="eyebrow">Revision summary</span><h2>What to focus on next</h2></div></header>
+          <div className="summary-card-grid">
+            <article className="summary-card"><span>High-risk topics</span><strong>{data.mastery.high_risk_topics.length}</strong></article>
+            <article className="summary-card"><span>Weak topics</span><strong>{data.mentor_brief.weaknesses.length}</strong></article>
+            <article className="summary-card"><span>Next recommended action</span><strong>{action?.title ?? 'Complete another study session or quiz to refresh the plan.'}</strong><small>{action?.estimated_minutes ? `Estimated ${action.estimated_minutes} min` : 'No estimate available'}</small></article>
+          </div>
+        </RevealSection>
+
+        <RevealSection className="dashboard-section current-affairs-section">
+          <header className="section-heading"><div><span className="eyebrow">Current Affairs preview</span><h2>Accepted stories and risk</h2></div><button className="secondary-button" onClick={() => onNavigate?.('current_affairs')}>Open Current Affairs</button></header>
+          {currentArticles.length ? (
+            <div className="current-affairs-list">
+              {currentArticles.map((article) => (
+                <article key={article.id} className="current-affairs-card">
+                  <h3>{article.title}</h3>
+                  <p>{article.publisher} · {article.subject}</p>
+                  <small>{article.publication_date ?? article.retrieved_at.slice(0, 10)}</small>
+                </article>
+              ))}
+            </div>
+          ) : <div className="profile-state">No accepted Current Affairs stories are available yet.</div>}
+          {currentAffairs ? <div className="current-affairs-meta"><span>{currentAffairs.today_quiz_completed ? 'Quiz complete' : 'Quiz pending'}</span><span>High risk: {currentAffairs.high_risk_article_count}</span><span>Next revision: {currentAffairs.next_revision ? new Date(currentAffairs.next_revision).toLocaleDateString() : '—'}</span></div> : null}
+        </RevealSection>
+
+        <RevealSection className="dashboard-section resources-section">
+          <header className="section-heading"><div><span className="eyebrow">Recent study material</span><h2>PDFs and roadmaps</h2></div></header>
+          <div className="resource-grid">
+            <article className="resource-card">
+              <h3>Recent PDFs</h3>
+              {pdfs.length ? pdfs.map((document) => (
+                <p key={document.document_id}>{document.name}<small>{new Date(document.uploaded_at).toLocaleDateString()}</small></p>
+              )) : <p>No recent PDFs yet.</p>}
+            </article>
+            <article className="resource-card">
+              <h3>Saved roadmaps</h3>
+              {roadmaps.length ? roadmaps.map((roadmap) => (
+                <p key={roadmap.id}>{roadmap.title}<small>{roadmap.visual_type.replaceAll('_', ' ')}</small></p>
+              )) : <p>No saved roadmaps yet.</p>}
+            </article>
+          </div>
+        </RevealSection>
+
+        <RevealSection className="dashboard-section activity-section">
+          <header className="section-heading"><div><span className="eyebrow">Recent activity</span><h2>What happened last</h2></div><button className="secondary-button" onClick={() => onNavigate?.('progress')}>View full progress</button></header>
+          {recentActivity.length ? <div className="activity-list">{recentActivity.map((event) => <article key={event.id}><strong>{event.event_type.replaceAll('_', ' ')}</strong><p>{event.topic ?? event.subject ?? 'General'}</p><small>{new Date(event.occurred_at).toLocaleString()}</small></article>)}</div> : <div className="profile-state">No meaningful recent activity recorded yet.</div>}
+        </RevealSection>
+      </div>
+
+      <div className="dashboard-footer"><small>Last updated {updated?.toLocaleTimeString() ?? '—'}. Mentor insights are estimates based on your study activity, mastery evidence and revision history.</small></div>
+    </section>
+  )
 }

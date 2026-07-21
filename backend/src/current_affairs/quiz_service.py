@@ -21,6 +21,8 @@ class CurrentAffairsQuizService:
     def _articles(self, start, end):
         with self.sessions() as session:
             return list(session.scalars(select(CurrentAffairsArticle).where(CurrentAffairsArticle.status == "active",
+                CurrentAffairsArticle.publisher == "PWOnlyIAS",
+                CurrentAffairsArticle.extraction_status.notin_(["image_only", "unavailable", "failed"]),
                 CurrentAffairsArticle.publication_date >= start, CurrentAffairsArticle.publication_date <= end)
                 .order_by(CurrentAffairsArticle.importance_level.desc(), CurrentAffairsArticle.publication_date.desc())))
 
@@ -53,7 +55,7 @@ class CurrentAffairsQuizService:
             if key in seen: continue
             seen.add(key); questions.append(CurrentAffairsQuizQuestion(id=str(uuid.uuid4()), quiz_id="", question_type=kind,
                 question=text, options_json=options, correct_answer=answer,
-                explanation=f"From {article.publisher}: {fact}", article_id=article.id, source_url=article.source_url,
+                explanation=f"AI-generated practice quiz based on the cited PWOnlyIAS source ({article.publisher}): {fact}", article_id=article.id, source_url=article.source_url,
                 subject=article.subject, topic=article.topic, difficulty=payload.difficulty))
         if len(questions) < count: raise ValueError("Insufficient distinct accepted Current Affairs content for the requested quiz")
         quiz = CurrentAffairsQuiz(id=str(uuid.uuid4()), user_id=user_id, title=f"{payload.period_type.title()} Current Affairs Quiz",

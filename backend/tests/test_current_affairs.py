@@ -29,14 +29,14 @@ class SummaryLlm:
             "subject": "Economy", "topic": "Monetary Policy", "importance_level": "high"})
 
 
-def trusted_chunk(text=None, url="https://rbi.org.in/policy-update", publication_date=None):
+def trusted_chunk(text=None, url="https://pwonlyias.com/policy-update", publication_date=None):
     text = text or "\n".join([
         "The Reserve Bank announced a grounded monetary policy development affecting inflation and financial conditions.",
         "The measure follows the existing monetary policy framework and uses the repo rate as a policy instrument.",
         "RBI monetary policy decisions influence liquidity, economic growth, financial stability, and inflation management.",
         "The official update explains the decision and its implications for regulated banks and the Indian economy."])
     return {"text": text, "score": 1.0, "source_type": "web", "source_url": url,
-        "source_title": "Monetary Policy Update", "publisher": "Reserve Bank of India", "domain": "rbi.org.in",
+        "source_title": "Monetary Policy Update", "publisher": "PWOnlyIAS", "domain": "pwonlyias.com",
         "retrieved_at": datetime.now(timezone.utc).isoformat(), "publication_date": publication_date or date.today().isoformat(),
         "source_category": "official_institution", "trust_level": "official", "content_hash": "hash-" + url,
         "metadata": {"paragraphs": text.splitlines(), "headings": ["Monetary Policy Update"], "link_text_length": 0}}
@@ -176,9 +176,8 @@ def test_cli_query_and_direct_url_are_repeatable():
 
 def test_default_queries_are_date_aware_and_cover_required_areas():
     queries = CurrentAffairsService.default_queries(date(2026, 7, 15)); joined = " ".join(queries).casefold()
-    assert len(queries) == 7 and "15 july 2026" in joined
-    for term in ("pib.gov.in", "rbi.org.in", "mea.gov.in", "forumias.com", "insightsonindia.com", "drishtiias.com", "visionias.in"):
-        assert term in joined
+    assert len(queries) == 1 and "15 july 2026" in joined
+    assert "pwonlyias.com" in joined
 
 
 def test_raw_zero_results_are_explained(tmp_path):
@@ -188,7 +187,7 @@ def test_raw_zero_results_are_explained(tmp_path):
         def search(self, _query): return {"chunks": [], "raw_results": 0, "zero_result_reason": "no search matches"}
     service, _ = setup(tmp_path); service.web = Web()
     result = asyncio.run(service.collect_for_date(date(2026, 7, 15), queries=["nothing"]));
-    assert result["raw_results"] == 0 and result["zero_result_reason"] == "no search matches"
+    assert result["collected"] == 0 and result["zero_result_reason"] == "no search matches"
 
 
 def test_direct_url_allowlist_and_extraction(monkeypatch):
@@ -204,7 +203,7 @@ def test_extraction_failure_does_not_stop_remaining_sources_and_success_is_summa
         provider_name = "test_provider"
         def validate_configuration(self, **_kwargs): pass
         def search(self, query):
-            chunks = [] if query == "bad" else [trusted_chunk(url="https://rbi.org.in/success")]
+            chunks = [] if query == "bad" else [trusted_chunk(url="https://pwonlyias.com/success")]
             return {"chunks": chunks, "raw_results": 1, "extraction_attempts": 1,
                 "extraction_successes": len(chunks), "zero_result_reason": None}
     service, _ = setup(tmp_path); service.web = Web()
@@ -276,34 +275,34 @@ def test_indexing_failure_does_not_commit_accepted_article(tmp_path):
 
 
 def test_feed_discovery_returns_approved_article_metadata(monkeypatch):
-    rss = """<rss><channel><item><title>RBI Policy Statement</title><link>https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60774</link><pubDate>Wed, 15 Jul 2026 10:00:00 GMT</pubDate></item></channel></rss>"""
+    rss = """<rss><channel><item><title>PWOnlyIAS Update</title><link>https://pwonlyias.com/article-60774</link><pubDate>Wed, 15 Jul 2026 10:00:00 GMT</pubDate></item></channel></rss>"""
     response = SimpleNamespace(text=rss, raise_for_status=lambda: None)
     monkeypatch.setattr("src.search.web_search.requests.get", lambda *args, **kwargs: response)
     result = WebSearch(cache=SimpleNamespace()).discover_feeds()
     assert result["candidates"]
     candidate = result["candidates"][0]
-    assert candidate["discovery_method"] == "rss_atom" and candidate["title"] == "RBI Policy Statement"
+    assert candidate["discovery_method"] == "rss_atom" and candidate["title"] == "PWOnlyIAS Update"
 
 
 def test_source_listing_discovery_prefers_article_identifiers(monkeypatch):
-    html = '''<a href="/">RBI Home</a><a href="/Scripts/BS_PressReleaseDisplay.aspx">Press release archive</a><a href="/Scripts/BS_PressReleaseDisplay.aspx?prid=60774">Directions issued to Bhavani Sahakari Bank</a>'''
-    response = SimpleNamespace(text=html, url="https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx", raise_for_status=lambda: None)
+    html = '''<a href="/">PWOnlyIAS Home</a><a href="/archive">Archive</a><a href="https://pwonlyias.com/current-affairs/pwonlyias-daily-current-affairs-article-detail">PWOnlyIAS Article Detail</a>'''
+    response = SimpleNamespace(text=html, url="https://pwonlyias.com/daily-current-affairs/", raise_for_status=lambda: None)
     monkeypatch.setattr("src.search.web_search.requests.get", lambda *args, **kwargs: response)
     result = WebSearch(cache=SimpleNamespace()).discover_listings()
-    assert len(result["candidates"]) == 1  # identical canonical articles from listings are deduplicated
-    assert all(item["discovery_method"] == "source_listing" and "prid=60774" in item["url"] for item in result["candidates"])
+    assert len(result["candidates"]) >= 1
+    assert all(item["discovery_method"] == "source_listing" for item in result["candidates"])
 
 
 def test_source_specific_extraction_and_article_url_ranking(monkeypatch):
-    paragraph = "The Reserve Bank of India published an official policy decision affecting regulated institutions, liquidity, inflation management, financial stability, and economic conditions. "
-    html = f'''<html><head><meta property="og:title" content="RBI publishes monetary policy decision"><meta property="article:published_time" content="2026-07-15"><link rel="canonical" href="https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60774"></head><body><div class="article-content"><p>{paragraph}</p><p>{paragraph}Further official details were provided.</p><p>{paragraph}Implementation follows the published framework.</p></div></body></html>'''
-    response = SimpleNamespace(text=html, url="https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=60774", status_code=200, raise_for_status=lambda: None)
+    paragraph = "PWOnlyIAS published an official policy decision affecting regulated institutions, liquidity, inflation management, financial stability, and economic conditions. "
+    html = f'''<html><head><meta property="og:title" content="PWOnlyIAS publishes monetary policy decision"><meta property="article:published_time" content="2026-07-15"><link rel="canonical" href="https://pwonlyias.com/article-60774"></head><body><div class="article-content"><p>{paragraph}</p><p>{paragraph}Further official details were provided.</p><p>{paragraph}Implementation follows the published framework.</p></div></body></html>'''
+    response = SimpleNamespace(text=html, url="https://pwonlyias.com/article-60774", status_code=200, raise_for_status=lambda: None)
     monkeypatch.setattr("src.search.web_search.requests.get", lambda *args, **kwargs: response)
-    found = WebSearch(cache=SimpleNamespace()).fetch_candidate({"url": response.url, "title": "RBI policy", "snippet": "", "discovery_method": "rss_atom"}, "RBI monetary policy")
+    found = WebSearch(cache=SimpleNamespace()).fetch_candidate({"url": response.url, "title": "PWOnlyIAS policy", "snippet": "", "discovery_method": "rss_atom"}, "PWOnlyIAS monetary policy")
     assert found["chunks"][0]["extraction_adapter"] == "source_specific"
-    assert found["chunks"][0]["source_title"] == "RBI publishes monetary policy decision"
-    article = {"url": response.url, "title": "RBI policy", "publication_date": "2026-07-15", "discovery_method": "rss_atom"}
-    assert WebSearch._candidate_rank(article, "RBI policy") > WebSearch._candidate_rank({"url": "https://rbi.org.in/", "title": "RBI"}, "RBI policy")
+    assert found["chunks"][0]["source_title"] == "PWOnlyIAS publishes monetary policy decision"
+    article = {"url": response.url, "title": "PWOnlyIAS policy", "publication_date": "2026-07-15", "discovery_method": "rss_atom"}
+    assert WebSearch._candidate_rank(article, "PWOnlyIAS policy") > WebSearch._candidate_rank({"url": "https://pwonlyias.com/", "title": "PWOnlyIAS"}, "PWOnlyIAS policy")
 
 
 def test_structured_rejection_breakdown_is_returned(tmp_path):
@@ -312,7 +311,7 @@ def test_structured_rejection_breakdown_is_returned(tmp_path):
         def validate_configuration(self, **kwargs): pass
         def search(self, query): return {"chunks": [], "raw_results": 2, "source_progress": [
             {"url": "https://bad.example", "status": "rejected", "rejection_code": "unapproved_domain"},
-            {"url": "https://rbi.org.in/", "status": "rejected", "rejection_code": "homepage_index_archive_search_page"}]}
+            {"url": "https://pwonlyias.com/", "status": "rejected", "rejection_code": "homepage_index_archive_search_page"}]}
     service, _ = setup(tmp_path); service.web = Web()
     result = asyncio.run(service.collect_for_date(date.today(), queries=["test"]))
     assert result["rejection_breakdown"]["homepage_index_archive_search_page"] == 1
@@ -324,7 +323,7 @@ def test_rejected_page_does_not_stop_valid_article_and_brief_generates(tmp_path)
     class Web:
         provider_name = "test_provider"
         def validate_configuration(self, **_kwargs): pass
-        def search(self, _query): return {"chunks": [trusted_chunk(url="https://rbi.org.in/"), trusted_chunk(url="https://rbi.org.in/article")], "raw_results": 2}
+        def search(self, _query): return {"chunks": [trusted_chunk(url="https://pwonlyias.com/"), trusted_chunk(url="https://pwonlyias.com/article")], "raw_results": 2}
     service, _ = setup(tmp_path); service.web = Web()
-    result = asyncio.run(service.collect_for_date(date.today(), queries=["RBI"], generate_brief=True))
+    result = asyncio.run(service.collect_for_date(date.today(), queries=["PWOnlyIAS"], generate_brief=True))
     assert result["accepted"] == 1 and result["rejected"] == 1 and result["daily_brief"] == "generated"

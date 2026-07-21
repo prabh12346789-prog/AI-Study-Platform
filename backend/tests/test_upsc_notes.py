@@ -127,3 +127,23 @@ def test_pdf_validation_and_signature():
     blocks, page_count, status = extract_pdf_blocks(b"%PDF-1.4 " + b"X" * (51 * 1024 * 1024), max_size_mb=50)
     assert status == "failed"
 
+
+def test_subject_filter_and_zero_result_behavior():
+    # Subject matching returns notes
+    res_match = client.get("/upsc-notes?subject=Indian%20Polity%20and%20Governance")
+    assert res_match.status_code == 200
+    polity_notes = res_match.json()
+    assert len(polity_notes) >= 1
+    assert all(n["subject"] == "Indian Polity and Governance" for n in polity_notes)
+
+    # Zero-result subject returns empty list []
+    res_empty = client.get("/upsc-notes?subject=Ethics")
+    assert res_empty.status_code == 200
+    assert res_empty.json() == []
+
+    # Synthetic test notes excluded
+    all_notes = client.get("/upsc-notes").json()
+    assert not any(n["title"] == "Prog Test" for n in all_notes)
+    assert not any(n["id"].startswith("test-") for n in all_notes)
+
+

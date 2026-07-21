@@ -287,6 +287,19 @@ class CurrentAffairsService:
                 query = query.where(CurrentAffairsArticle.publisher == publisher)
             else:
                 query = query.where(CurrentAffairsArticle.publisher == "PWOnlyIAS")
+            query = query.where(
+                ~CurrentAffairsArticle.title.ilike("%Pending Backfill%"),
+                ~CurrentAffairsArticle.title.ilike("%Image Only PDF%"),
+                ~CurrentAffairsArticle.title.ilike("%Mode Test%"),
+                ~CurrentAffairsArticle.title.ilike("%Internal Reader Test%"),
+                ~CurrentAffairsArticle.title.ilike("%July Week 3%"),
+                ~CurrentAffairsArticle.title.ilike("%July 2026%"),
+                ~CurrentAffairsArticle.id.like("test-%"),
+                ~CurrentAffairsArticle.id.like("demo-%"),
+                ~CurrentAffairsArticle.id.like("sample-%"),
+                ~CurrentAffairsArticle.id.like("isolated-%"),
+                ~CurrentAffairsArticle.id.like("prog-%")
+            )
             if date_value: query = query.where(CurrentAffairsArticle.publication_date == date_value)
             if date_from: query = query.where(CurrentAffairsArticle.publication_date >= date_from)
             if date_to: query = query.where(CurrentAffairsArticle.publication_date <= date_to)
@@ -302,8 +315,18 @@ class CurrentAffairsService:
             if search:
                 pattern = f"%{search}%"; query = query.where(or_(CurrentAffairsArticle.title.ilike(pattern), CurrentAffairsArticle.summary.ilike(pattern)))
             rows = list(session.scalars(query.order_by(CurrentAffairsArticle.publication_date.desc(), CurrentAffairsArticle.retrieved_at.desc())))
+
+        # Deduplicate rows by canonical URL or title + publication_date
+        unique_rows = []
+        seen = set()
+        for row in rows:
+            identity = row.source_url or f"{row.title.strip().lower()}_{row.publication_date}"
+            if identity not in seen:
+                seen.add(identity)
+                unique_rows.append(row)
+
         opened = {e.metadata_json.get("article_id") for e in self.activity.list_events(user_id=user_id, event_type="current_affairs_opened") if e.metadata_json}
-        return [(row, row.id in saved_ids, row.id in opened) for row in rows]
+        return [(row, row.id in saved_ids, row.id in opened) for row in unique_rows]
 
     def get_article(self, article_id, *, user_id="user_001", record_open=True):
         with self.sessions() as session: row = session.get(CurrentAffairsArticle, article_id)

@@ -164,7 +164,15 @@ class UPSCNotesService:
             ).filter(
                 UPSCNote.provider == "PWOnlyIAS",
                 UPSCNote.active == True,
-                UPSCNote.content_status == "ready"
+                UPSCNote.content_status == "ready",
+                ~UPSCNote.title.ilike("%Test Note%"),
+                ~UPSCNote.title.ilike("%Demo Note%"),
+                ~UPSCNote.title.ilike("%Prog Test%"),
+                ~UPSCNote.id.like("test-%"),
+                ~UPSCNote.id.like("demo-%"),
+                ~UPSCNote.id.like("sample-%"),
+                ~UPSCNote.id.like("isolated-%"),
+                ~UPSCNote.id.like("prog-%")
             ).group_by(UPSCNote.normalized_subject).all()
             return [{"subject": r[0], "note_count": r[1]} for r in rows if r[0]]
 
@@ -184,7 +192,18 @@ class UPSCNotesService:
                    language=None, prelims_only=False, mains_only=False, search=None, saved_only=False):
         with self.sessions() as session:
             saved_ids = set(session.scalars(select(SavedNote.note_id).where(SavedNote.user_id == user_id)))
-            query = select(UPSCNote).filter(UPSCNote.active == True, UPSCNote.provider == "PWOnlyIAS")
+            query = select(UPSCNote).filter(
+                UPSCNote.active == True,
+                UPSCNote.provider == "PWOnlyIAS",
+                ~UPSCNote.title.ilike("%Test Note%"),
+                ~UPSCNote.title.ilike("%Demo Note%"),
+                ~UPSCNote.title.ilike("%Prog Test%"),
+                ~UPSCNote.id.like("test-%"),
+                ~UPSCNote.id.like("demo-%"),
+                ~UPSCNote.id.like("sample-%"),
+                ~UPSCNote.id.like("isolated-%"),
+                ~UPSCNote.id.like("prog-%")
+            )
             if subject:
                 query = query.filter(UPSCNote.normalized_subject == subject)
             if collection_id:

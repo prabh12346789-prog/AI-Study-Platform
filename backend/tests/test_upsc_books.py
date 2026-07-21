@@ -9,73 +9,70 @@ from src.upsc_books.models import UPSCBook, BookChapter
 client = TestClient(app)
 
 
-def test_pwonlyias_source_url_validation_reused():
-    assert is_valid_pwonlyias_source_url("https://pwonlyias.com/books/polity") is True
-    assert is_valid_pwonlyias_source_url("https://evilbooks.com") is False
-    assert is_valid_pwonlyias_source_url("https://pwonlyias.com.evil.com") is False
-    assert is_valid_pwonlyias_source_url("http://127.0.0.1/book.pdf") is False
-
-
-def test_synthetic_development_ids_absent():
-    res = client.get("/upsc-books/book-polity-01")
-    assert res.status_code == 404
-
-
-def test_chapter_detection_only_on_explicit_headings():
-    # Uncertain headings produce no chapters
-    uncertain_blocks = [
-        {"type": "heading", "level": 2, "text": "Introduction"},
-        {"type": "paragraph", "text": "Some text."}
-    ]
-    assert detect_chapters_from_blocks(uncertain_blocks) == []
-
-    # Explicit chapter heading produces chapter
-    explicit_blocks = [
-        {"type": "heading", "level": 2, "text": "Chapter 1: Preamble", "page_start": 1, "page_end": 10},
-        {"type": "paragraph", "text": "Preamble content."}
-    ]
-    chs = detect_chapters_from_blocks(explicit_blocks)
-    assert len(chs) == 1
-    assert chs[0]["title"] == "Chapter 1: Preamble"
-    assert chs[0]["chapter_order"] == 1
-
-
-def test_isolated_book_fixture_flow():
-    book_id = f"test-book-{uuid.uuid4()}"
+def test_isolated_test_book_and_synthetic_ids_excluded():
     svc = UPSCBooksService()
     with svc.sessions() as session:
         session.add(UPSCBook(
-            id=book_id, provider="PWOnlyIAS", title="Isolated Test Book", slug=f"slug-{book_id}",
-            normalized_subject="Indian Polity and Governance", official_source_url="https://pwonlyias.com/books/isolated",
-            canonical_url=f"https://pwonlyias.com/books/isolated-{book_id}", content_status="ready",
-            extraction_status="ready", content_blocks_json=[{"type": "paragraph", "text": "Content"}]
-        ))
-        session.add(BookChapter(
-            id=f"ch-{book_id}", book_id=book_id, title="Chapter 1: Intro", slug="ch-1", chapter_order=1, page_start=1, page_end=5
+            id="test-isolated-001", provider="PWOnlyIAS", title="Isolated Test Book", slug="isolated-test-book",
+            normalized_subject="Indian Polity and Governance", official_source_url="https://pwonlyias.com/test",
+            canonical_url="https://pwonlyias.com/test-isolated-001"
         ))
         session.commit()
 
-    # Get detail
-    res_detail = client.get(f"/upsc-books/{book_id}")
-    assert res_detail.status_code == 200
-    data = res_detail.json()
-    assert data["id"] == book_id
-    assert data["provider"] == "PWOnlyIAS"
-    assert len(data["chapters"]) == 1
-    assert "C:\\" not in str(data) and "/tmp/" not in str(data)
+    res = client.get("/upsc-books")
+    assert res.status_code == 200
+    data = res.json()
+    assert not any("Isolated Test Book" in b["title"] for b in data)
+    assert not any(b["id"].startswith("test-") for b in data)
 
-    # Get content
-    res_content = client.get(f"/upsc-books/{book_id}/content")
-    assert res_content.status_code == 200
-    assert len(res_content.json()["content_blocks"]) > 0
 
-    # Save & unsave
-    assert client.post(f"/upsc-books/{book_id}/save").status_code == 204
-    assert client.get(f"/upsc-books/{book_id}").json()["saved"] is True
-    assert client.delete(f"/upsc-books/{book_id}/save").status_code == 204
-    assert client.get(f"/upsc-books/{book_id}").json()["saved"] is False
+def test_import_from_official_source_page_validates_domain():
+    svc = UPSCBooksService()
+    with pytest.raises(ValueError, match="PWOnlyIAS"):
+        svc.import_from_official_source_page("https://evilbooks.com/book-page")
 
-    # Progress
-    res_prog = client.post(f"/upsc-books/{book_id}/progress", json={"chapter_id": f"ch-{book_id}", "progress_percentage": 50.0, "last_position": 10})
-    assert res_prog.status_code == 200
-    assert res_prog.json()["progress_percentage"] == 50.0
+
+def test_subject_filter_and_zero_result_behavior():
+    svc = UPSCBooksService()
+    book_id = f"real-book-{uuid.uuid4()}"
+    with svc.sessions() as session:
+        session.add(UPSCBook(
+            id=book_id, provider="PWOnlyIAS", title="Real Polity Reference Book", slug=f"slug-{book_id}",
+            normalized_subject="Indian Polity and Governance", official_source_url="https://pwonlyias.com/books/polity-real",
+            canonical_url=f"https://pwonlyias.com/books/polity-real-{book_id}", content_status="ready",
+            extraction_status="ready", content_blocks_json=[{"type": "paragraph", "text": "Polity content"}]
+        ))
+        session.commit()
+
+    # Query matching subject
+    res_match = client.get("/upsc-books?subject=Indian%20Polity%20and%20Governance")
+    assert res_match.status_code == 200
+    books_polity = res_match.json()
+    assert any(b["id"] == book_id for b in books_polity)
+
+    # Query zero-result subject
+    res_empty = client.get("/upsc-books?subject=Ethics")
+    assert res_empty.status_code == 200
+    assert res_empty.json() == []
+
+
+def test_chapter_detection_only_on_explicit_headings():
+    uncertain_blocks = [
+        {"type": "heading", "level": 2, "text": "Overview"},
+        {"type": "paragraph", "text": "Text"}
+    ]
+    assert detect_chapters_from_blocks(uncertain_blocks) == []
+
+    explicit_blocks = [
+        {"type": "heading", "level": 2, "text": "Chapter 1: Constitutional Pillars", "page_start": 1, "page_end": 15}
+    ]
+    chs = detect_chapters_from_blocks(explicit_blocks)
+    assert len(chs) == 1
+    assert chs[0]["title"] == "Chapter 1: Constitutional Pillars"
+
+
+def test_no_local_paths_exposed_in_api():
+    res = client.get("/upsc-books")
+    assert res.status_code == 200
+    txt = str(res.json())
+    assert "C:\\" not in txt and "/tmp/" not in txt

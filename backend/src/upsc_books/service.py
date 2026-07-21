@@ -63,12 +63,75 @@ class UPSCBooksService:
         self.sessions = get_session_factory(db_path)
         self.activity = activity or ActivityManager(db_path)
 
-    def discover_books(self, limit: int = 1, dry_run: bool = False) -> dict:
-        import urllib.request
-        discovered = []
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) UPSC-AI-Mentor/1.0"}
+    def import_from_official_source_page(self, source_page_url: str) -> dict:
+        if not is_valid_pwonlyias_source_url(source_page_url):
+            raise ValueError("Source URL must belong to official PWOnlyIAS domain")
 
-        for hub_url in OFFICIAL_BOOK_HUBS:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) UPSC-AI-Mentor/1.0"}
+        req = urllib.request.Request(source_page_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status != 200:
+                raise ValueError("Could not reach official source page")
+            final_url = resp.geturl()
+            if not is_valid_pwonlyias_source_url(final_url):
+                raise ValueError("Source page redirected to non-PWOnlyIAS domain")
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        # Search for PDF links or download anchors
+        pdf_urls = re.findall(r'href=["\'](https?://[^"\']+\.pdf)["\']', html, re.IGNORECASE)
+        if not pdf_urls:
+            download_anchors = re.findall(r'href=["\'](https?://[^"\']+)["\'][^>]*>(?:[^<]*(?:download|pdf|book|booklet)[^<]*)</a>', html, re.IGNORECASE)
+            pdf_urls = [u for u in download_anchors if u.lower().endswith(".pdf")]
+
+        if not pdf_urls:
+            raise ValueError("No verified public PDF link found on official PWOnlyIAS source page")
+
+        pdf_url = pdf_urls[0]
+        if not is_valid_pwonlyias_source_url(pdf_url):
+            raise ValueError("Discovered PDF URL is not on official PWOnlyIAS domain")
+
+        pdf_req = urllib.request.Request(pdf_url, headers=headers)
+        with urllib.request.urlopen(pdf_req, timeout=12) as pdf_resp:
+            if pdf_resp.status != 200:
+                raise ValueError("Could not download discovered PDF")
+            pdf_bytes = pdf_resp.read()
+
+        blocks, p_count, status = extract_pdf_blocks(pdf_bytes)
+        if status not in ("ready", "image_only"):
+            raise ValueError("PDF content extraction failed or invalid signature")
+
+        raw_title = pdf_url.split("/")[-1].replace(".pdf", "").replace("-", " ").title()
+        subject = normalize_subject(raw_title)
+        b_id = f"book-{hashlib.md5(pdf_url.encode()).hexdigest()[:12]}"
+        chs = detect_chapters_from_blocks(blocks)
+
+        with self.sessions() as session:
+            obj = UPSCBook(
+                id=b_id, provider="PWOnlyIAS", title=raw_title, slug=b_id,
+                normalized_subject=subject, official_source_url=source_page_url,
+                official_pdf_url=pdf_url, canonical_url=pdf_url,
+                content_status="ready" if status == "ready" else "unavailable",
+                extraction_status=status, page_count=p_count,
+                content_blocks_json=blocks
+            )
+            session.merge(obj)
+            for c in chs:
+                session.merge(BookChapter(
+                    id=f"ch-{b_id}-{c['chapter_order']}", book_id=b_id,
+                    title=c["title"], slug=c["slug"], chapter_order=c["chapter_order"],
+                    page_start=c["page_start"], page_end=c["page_end"]
+                ))
+            session.commit()
+            self._index(obj)
+
+        return {"id": b_id, "title": raw_title, "subject": subject, "page_count": p_count, "chapters": len(chs)}
+
+    def discover_books(self, limit: int = 2, dry_run: bool = False) -> dict:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) UPSC-AI-Mentor/1.0"}
+        discovered = []
+        visited_detail_pages = set()
+
+        for hub_url in OFFICIAL_BOOK_HUBS[:3]:
             if len(discovered) >= limit:
                 break
             if not is_valid_pwonlyias_source_url(hub_url):
@@ -78,69 +141,86 @@ class UPSCBooksService:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     if resp.status != 200:
                         continue
-                    final_url = resp.geturl()
-                    if not is_valid_pwonlyias_source_url(final_url):
-                        continue
                     html = resp.read().decode("utf-8", errors="ignore")
 
-                    pdf_urls = re.findall(r'href=["\'](https?://[^"\']+\.pdf)["\']', html, re.IGNORECASE)
-                    for pdf_url in pdf_urls:
-                        if len(discovered) >= limit:
-                            break
-                        try:
-                            pdf_req = urllib.request.Request(pdf_url, headers=headers)
-                            with urllib.request.urlopen(pdf_req, timeout=8) as pdf_resp:
-                                if pdf_resp.status != 200:
-                                    continue
-                                pdf_final_url = pdf_resp.geturl()
-                                pdf_bytes = pdf_resp.read()
+                # Find candidate detail pages on pwonlyias.com
+                detail_links = re.findall(r'href=["\'](https?://(?:[a-zA-Z0-9-]+\.)*pwonlyias\.com/[^"\']+)["\']', html, re.IGNORECASE)
+                for detail_url in detail_links:
+                    if len(discovered) >= limit or len(visited_detail_pages) >= 10:
+                        break
+                    if detail_url in visited_detail_pages or detail_url.endswith((".css", ".js", ".png", ".jpg", ".jpeg")):
+                        continue
+                    visited_detail_pages.add(detail_url)
 
-                                blocks, p_count, status = extract_pdf_blocks(pdf_bytes)
-                                if status not in ("ready", "image_only"):
-                                    continue
+                    try:
+                        d_req = urllib.request.Request(detail_url, headers=headers)
+                        with urllib.request.urlopen(d_req, timeout=5) as d_resp:
+                            if d_resp.status != 200:
+                                continue
+                            d_html = d_resp.read().decode("utf-8", errors="ignore")
 
-                                title = pdf_url.split("/")[-1].replace(".pdf", "").replace("-", " ").title()
-                                b_id = f"book-{hashlib.md5(pdf_url.encode()).hexdigest()[:12]}"
-                                chs = detect_chapters_from_blocks(blocks)
+                        pdf_urls = re.findall(r'href=["\'](https?://[^"\']+\.pdf)["\']', d_html, re.IGNORECASE)
+                        for pdf_url in pdf_urls:
+                            if len(discovered) >= limit:
+                                break
+                            if not is_valid_pwonlyias_source_url(pdf_url):
+                                continue
+                            try:
+                                pdf_req = urllib.request.Request(pdf_url, headers=headers)
+                                with urllib.request.urlopen(pdf_req, timeout=8) as pdf_resp:
+                                    if pdf_resp.status != 200:
+                                        continue
+                                    pdf_final_url = pdf_resp.geturl()
+                                    pdf_bytes = pdf_resp.read()
 
-                                book_record = {
-                                    "id": b_id,
-                                    "title": title,
-                                    "slug": b_id,
-                                    "normalized_subject": "General Studies",
-                                    "official_source_url": hub_url,
-                                    "official_pdf_url": pdf_final_url,
-                                    "content_status": "ready" if status == "ready" else "unavailable",
-                                    "extraction_status": status,
-                                    "page_count": p_count,
-                                    "chapters_detected": len(chs),
-                                    "blocks_count": len(blocks)
-                                }
+                                    blocks, p_count, status = extract_pdf_blocks(pdf_bytes)
+                                    if status not in ("ready", "image_only"):
+                                        continue
 
-                                if not dry_run:
-                                    with self.sessions() as session:
-                                        obj = UPSCBook(
-                                            id=b_id, provider="PWOnlyIAS", title=title, slug=b_id,
-                                            normalized_subject="General Studies", official_source_url=hub_url,
-                                            official_pdf_url=pdf_final_url, canonical_url=pdf_final_url,
-                                            content_status="ready" if status == "ready" else "unavailable",
-                                            extraction_status=status, page_count=p_count,
-                                            content_blocks_json=blocks
-                                        )
-                                        session.merge(obj)
-                                        for c in chs:
-                                            session.merge(BookChapter(
-                                                id=f"ch-{b_id}-{c['chapter_order']}", book_id=b_id,
-                                                title=c["title"], slug=c["slug"], chapter_order=c["chapter_order"],
-                                                page_start=c["page_start"], page_end=c["page_end"]
-                                            ))
-                                        session.commit()
-                                        self._index(obj)
-                                discovered.append(book_record)
-                        except Exception as e:
-                            log.warning(f"PDF download skipped for {pdf_url}: {e}")
+                                    title = pdf_url.split("/")[-1].replace(".pdf", "").replace("-", " ").title()
+                                    b_id = f"book-{hashlib.md5(pdf_url.encode()).hexdigest()[:12]}"
+                                    chs = detect_chapters_from_blocks(blocks)
+                                    subj = normalize_subject(title)
+
+                                    book_record = {
+                                        "id": b_id,
+                                        "title": title,
+                                        "slug": b_id,
+                                        "normalized_subject": subj,
+                                        "official_source_url": detail_url,
+                                        "official_pdf_url": pdf_final_url,
+                                        "content_status": "ready" if status == "ready" else "unavailable",
+                                        "extraction_status": status,
+                                        "page_count": p_count,
+                                        "chapters_detected": len(chs)
+                                    }
+
+                                    if not dry_run:
+                                        with self.sessions() as session:
+                                            obj = UPSCBook(
+                                                id=b_id, provider="PWOnlyIAS", title=title, slug=b_id,
+                                                normalized_subject=subj, official_source_url=detail_url,
+                                                official_pdf_url=pdf_final_url, canonical_url=pdf_final_url,
+                                                content_status="ready" if status == "ready" else "unavailable",
+                                                extraction_status=status, page_count=p_count,
+                                                content_blocks_json=blocks
+                                            )
+                                            session.merge(obj)
+                                            for c in chs:
+                                                session.merge(BookChapter(
+                                                    id=f"ch-{b_id}-{c['chapter_order']}", book_id=b_id,
+                                                    title=c["title"], slug=c["slug"], chapter_order=c["chapter_order"],
+                                                    page_start=c["page_start"], page_end=c["page_end"]
+                                                ))
+                                            session.commit()
+                                            self._index(obj)
+                                    discovered.append(book_record)
+                            except Exception as e:
+                                log.warning(f"PDF download failed for {pdf_url}: {e}")
+                    except Exception as e:
+                        log.warning(f"Detail page check failed for {detail_url}: {e}")
             except Exception as e:
-                log.warning(f"Discovery skipped for hub {hub_url}: {e}")
+                log.warning(f"Hub check failed for {hub_url}: {e}")
 
         return {"discovered_count": len(discovered), "items": discovered}
 
@@ -152,7 +232,14 @@ class UPSCBooksService:
             ).filter(
                 UPSCBook.provider == "PWOnlyIAS",
                 UPSCBook.active == True,
-                UPSCBook.content_status == "ready"
+                UPSCBook.content_status == "ready",
+                ~UPSCBook.title.ilike("%Isolated Test Book%"),
+                ~UPSCBook.title.ilike("%Prog Book%"),
+                ~UPSCBook.id.like("test-%"),
+                ~UPSCBook.id.like("demo-%"),
+                ~UPSCBook.id.like("sample-%"),
+                ~UPSCBook.id.like("isolated-%"),
+                ~UPSCBook.id.like("prog-%")
             ).group_by(UPSCBook.normalized_subject).all()
             return [{"subject": r[0], "book_count": r[1]} for r in rows if r[0]]
 
@@ -172,7 +259,17 @@ class UPSCBooksService:
                    language=None, prelims_only=False, mains_only=False, search=None, saved_only=False):
         with self.sessions() as session:
             saved_ids = set(session.scalars(select(SavedBook.book_id).where(SavedBook.user_id == user_id)))
-            query = select(UPSCBook).filter(UPSCBook.active == True, UPSCBook.provider == "PWOnlyIAS")
+            query = select(UPSCBook).filter(
+                UPSCBook.active == True,
+                UPSCBook.provider == "PWOnlyIAS",
+                ~UPSCBook.title.ilike("%Isolated Test Book%"),
+                ~UPSCBook.title.ilike("%Prog Book%"),
+                ~UPSCBook.id.like("test-%"),
+                ~UPSCBook.id.like("demo-%"),
+                ~UPSCBook.id.like("sample-%"),
+                ~UPSCBook.id.like("isolated-%"),
+                ~UPSCBook.id.like("prog-%")
+            )
             if subject:
                 query = query.filter(UPSCBook.normalized_subject == subject)
             if collection_id:

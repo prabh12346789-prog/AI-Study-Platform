@@ -17,6 +17,7 @@ SUPPORTED_EVENT_TYPES = {
     "roadmap_quiz_started", "roadmap_quiz_completed",
     "current_affairs_opened", "current_affairs_saved", "daily_brief_completed",
     "current_affairs_quiz_started", "current_affairs_quiz_completed", "current_affairs_revision_completed",
+    "upsc_note_opened", "upsc_note_saved",
 }
 
 

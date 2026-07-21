@@ -107,7 +107,7 @@ export interface RoadmapQuiz { id: string; roadmap_id: string; difficulty: strin
 export interface RoadmapQuizResult { score: number; total: number; percentage: number; correct_answers: QuizAnswerResult[]; incorrect_answers: QuizAnswerResult[]; explanations: string[]; weak_source_nodes: string[] }
 export interface QuizAnswerResult { question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; source_node_ids: string[] }
 export interface ContentBlock {
-  type: 'heading' | 'subheading' | 'paragraph' | 'bullet' | 'bullet_list' | 'table' | 'key_fact' | 'prelims_point' | 'mains_point'
+  type: 'heading' | 'subheading' | 'paragraph' | 'bullet' | 'bullet_list' | 'numbered_list' | 'important_fact' | 'table' | 'key_fact' | 'prelims_point' | 'mains_point'
   title?: string
   text?: string
   items?: string[]
@@ -428,5 +428,74 @@ export const getCurrentAffairsQuizAttempts = (id: string) => currentAffairsReque
 export const submitCurrentAffairsQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => currentAffairsRequest<CurrentAffairsQuizResult>(`/quizzes/${id}/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
 export const getCurrentAffairsRetentionOverview = () => currentAffairsRequest<CurrentAffairsRetentionOverview>('/retention/overview')
 export const markCurrentAffairsRevised = (id: string) => currentAffairsRequest<CurrentAffairsRetention>(`/retention/${id}/revise`, { method: 'POST' })
+
+// UPSC Notes API
+export interface NoteSubjectCount { subject: string; note_count: number }
+export interface NoteCollectionItem { id: string; provider: string; title: string; slug: string; collection_type: string; description?: string; language: string; exam_stage: string; official_source_url: string }
+export interface UPSCNote {
+  id: string
+  collection_id?: string | null
+  provider: string
+  title: string
+  slug: string
+  subject: string
+  original_subject?: string | null
+  topic: string
+  description?: string | null
+  language: string
+  prelims_relevant: boolean
+  mains_relevant: boolean
+  official_source_url: string
+  official_pdf_url?: string | null
+  publication_year?: number | null
+  content_status: string
+  extraction_status: string
+  page_count: number
+  estimated_reading_minutes: number
+  saved: boolean
+  progress_percentage: number
+  last_opened_at?: string | null
+}
+export interface UPSCNoteContentResponse {
+  id: string
+  slug: string
+  title: string
+  provider: string
+  subject: string
+  topic: string
+  description?: string | null
+  language: string
+  prelims_relevant: boolean
+  mains_relevant: boolean
+  estimated_reading_minutes: number
+  page_count: number
+  content_blocks: ContentBlock[]
+  page_references: string[]
+  official_source_url: string
+  official_pdf_url?: string | null
+  extraction_status: string
+  content_status: string
+  availability: 'available' | 'unavailable'
+  saved: boolean
+  progress_percentage: number
+}
+
+async function upscNotesRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/upsc-notes${path}`, init)
+  if (!response.ok) throw new Error(`UPSC Notes request failed (${response.status})`)
+  return response.status === 204 ? (undefined as T) : response.json()
+}
+
+export const getUpscNoteSubjects = () => upscNotesRequest<NoteSubjectCount[]>('/subjects')
+export const getUpscNoteCollections = (params = '') => upscNotesRequest<NoteCollectionItem[]>(`/collections${params ? `?${params}` : ''}`)
+export const getUpscNotes = (params = '') => upscNotesRequest<UPSCNote[]>(`${params ? `?${params}` : ''}`)
+export const getUpscNoteContent = (id: string) => upscNotesRequest<UPSCNoteContentResponse>(`/${id}/content`)
+export const saveUpscNote = (id: string, saved: boolean) => upscNotesRequest<void>(`/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
+export const updateUpscNoteProgress = (id: string, progress_percentage: number, last_position = 0) =>
+  upscNotesRequest<{ note_id: string; progress_percentage: number }>(`/${id}/progress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ progress_percentage, last_position })
+  })
 
 export { API_BASE_URL }

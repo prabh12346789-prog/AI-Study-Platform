@@ -1,7 +1,7 @@
 import { ReactNode, useMemo, useState } from 'react'
 import { Bell, BookOpen, BrainCircuit, ChevronRight, Gauge, Library, Menu, Newspaper, RefreshCcw, Search, Settings, Sparkles, UserRound, X } from 'lucide-react'
 
-export type AppPage = 'dashboard' | 'chat' | 'library' | 'current_affairs' | 'upsc_notes' | 'visual' | 'revision' | 'quizzes' | 'progress' | 'profile' | 'settings'
+export type AppPage = 'dashboard' | 'chat' | 'library' | 'current_affairs' | 'upsc_notes' | 'upsc_books' | 'visual' | 'revision' | 'quizzes' | 'progress' | 'profile' | 'settings'
 
 const NAVIGATION: Array<{ page: AppPage; label: string; icon: typeof Gauge }> = [
   { page: 'dashboard', label: 'Dashboard', icon: Gauge },
@@ -9,6 +9,7 @@ const NAVIGATION: Array<{ page: AppPage; label: string; icon: typeof Gauge }> = 
   { page: 'library', label: 'My Library', icon: Library },
   { page: 'current_affairs', label: 'Current Affairs', icon: Newspaper },
   { page: 'upsc_notes', label: 'UPSC Notes', icon: BookOpen },
+  { page: 'upsc_books', label: 'UPSC Books', icon: Library },
   { page: 'visual', label: 'Visual Learning', icon: BrainCircuit },
   { page: 'revision', label: 'Revision Center', icon: RefreshCcw },
   { page: 'quizzes', label: 'Quizzes', icon: BookOpen },

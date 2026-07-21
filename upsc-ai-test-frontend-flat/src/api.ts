@@ -498,4 +498,75 @@ export const updateUpscNoteProgress = (id: string, progress_percentage: number, 
     body: JSON.stringify({ progress_percentage, last_position })
   })
 
+// UPSC Books API
+export interface BookSubjectCount { subject: string; book_count: number }
+export interface BookCollectionItem { id: string; provider: string; title: string; slug: string; collection_type: string; description?: string; language: string; exam_stage: string; official_source_url: string }
+export interface BookChapterItem { id: string; title: string; chapter_order: number; page_start: number; page_end: number }
+export interface UPSCBook {
+  id: string
+  collection_id?: string | null
+  provider: string
+  title: string
+  slug: string
+  subject: string
+  original_subject?: string | null
+  description?: string | null
+  language: string
+  prelims_relevant: boolean
+  mains_relevant: boolean
+  official_source_url: string
+  official_pdf_url?: string | null
+  publication_year?: number | null
+  content_status: string
+  extraction_status: string
+  page_count: number
+  estimated_reading_minutes: number
+  saved: boolean
+  progress_percentage: number
+  last_opened_at?: string | null
+  chapters?: BookChapterItem[]
+}
+export interface UPSCBookContentResponse {
+  id: string
+  slug: string
+  title: string
+  provider: string
+  subject: string
+  description?: string | null
+  language: string
+  prelims_relevant: boolean
+  mains_relevant: boolean
+  estimated_reading_minutes: number
+  page_count: number
+  chapters: BookChapterItem[]
+  content_blocks: ContentBlock[]
+  page_references: string[]
+  official_source_url: string
+  official_pdf_url?: string | null
+  extraction_status: string
+  content_status: string
+  availability: 'available' | 'unavailable'
+  saved: boolean
+  progress_percentage: number
+}
+
+async function upscBooksRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/upsc-books${path}`, init)
+  if (!response.ok) throw new Error(`UPSC Books request failed (${response.status})`)
+  return response.status === 204 ? (undefined as T) : response.json()
+}
+
+export const getUpscBookSubjects = () => upscBooksRequest<BookSubjectCount[]>('/subjects')
+export const getUpscBookCollections = (params = '') => upscBooksRequest<BookCollectionItem[]>(`/collections${params ? `?${params}` : ''}`)
+export const getUpscBooks = (params = '') => upscBooksRequest<UPSCBook[]>(`${params ? `?${params}` : ''}`)
+export const getUpscBook = (id: string) => upscBooksRequest<UPSCBook>(`/${id}`)
+export const getUpscBookContent = (id: string, chapterId?: string) => upscBooksRequest<UPSCBookContentResponse>(`/${id}/content${chapterId ? `?chapter_id=${chapterId}` : ''}`)
+export const saveUpscBook = (id: string, saved: boolean) => upscBooksRequest<void>(`/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
+export const updateUpscBookProgress = (id: string, progress_percentage: number, chapter_id?: string, last_position = 0) =>
+  upscBooksRequest<{ book_id: string; progress_percentage: number }>(`/${id}/progress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ progress_percentage, chapter_id, last_position })
+  })
+
 export { API_BASE_URL }

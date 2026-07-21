@@ -6,6 +6,7 @@ import { VideoRecommendations } from './VideoRecommendations'
 import { VisualLearningPage } from './VisualLearningPage'
 import { CurrentAffairsPage } from './CurrentAffairsPage'
 import { UpscNotesPage } from './UpscNotesPage'
+import { UpscBooksPage } from './UpscBooksPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
 import { AppPage, AppShell } from './AppShell'
 import { LibraryPage, ProfilePage, ProgressPage, QuizzesPage, RevisionPage } from './StudyHubPages'
@@ -372,6 +373,7 @@ export default function App() {
         {page === 'visual' && <VisualLearningPage onAsk={askFromRoadmap} />}
         {page === 'current_affairs' && <CurrentAffairsPage onNavigate={setPage} />}
         {page === 'upsc_notes' && <UpscNotesPage onNavigate={setPage} />}
+        {page === 'upsc_books' && <UpscBooksPage onNavigate={setPage} />}
         {page === 'library' && <LibraryPage onUpload={() => fileRef.current?.click()} uploadState={uploadState} refreshKey={libraryRevision} onAsk={askAboutDocument} onVisual={() => setPage('visual')} />}
         {page === 'revision' && <RevisionPage trackingActive={trackingActive} />}
         {page === 'quizzes' && <QuizzesPage onNavigate={setPage} />}

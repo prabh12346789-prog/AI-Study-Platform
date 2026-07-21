@@ -14,6 +14,7 @@ from src.visual_roadmap.models import VisualRoadmap  # noqa: F401
 from src.current_affairs.models import (CurrentAffairsArticle, CurrentAffairsQuiz, CurrentAffairsQuizAttempt,
     CurrentAffairsQuizQuestion, CurrentAffairsRetention, DailyCurrentAffairsBrief, SavedCurrentAffairs)  # noqa: F401
 from src.upsc_notes.models import (NoteCollection, UPSCNote, SavedNote, NoteReadingProgress)  # noqa: F401
+from src.upsc_books.models import (BookCollection, UPSCBook, BookChapter, SavedBook as SavedBookModel, BookReadingProgress as BookReadingProgressModel)  # noqa: F401
 
 _database_logged = False
 

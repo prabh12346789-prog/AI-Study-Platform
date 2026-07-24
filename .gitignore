@@ -29,6 +29,8 @@ htmlcov/
 *.db-wal
 *.lock
 backend/data/
+backend/data/pwonlyias/
+backend/imports/pwonlyias/
 backend/chroma_db/
 backend/uploads/
 backend/generated/

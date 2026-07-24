@@ -19,6 +19,8 @@ SUPPORTED_EVENT_TYPES = {
     "current_affairs_quiz_started", "current_affairs_quiz_completed", "current_affairs_revision_completed",
     "upsc_note_opened", "upsc_note_saved",
     "upsc_book_opened", "upsc_book_saved",
+    "test_started", "prelims_test_completed", "current_affairs_test_completed",
+    "mains_question_generated", "mains_answer_submitted", "mains_evaluation_completed"
 }
 
 

@@ -1,5 +1,14 @@
 # Architectural Decisions
 
+## Reversible Report Demo Mode
+
+- Date: 2026-07-24
+- Decision: Add a local-only `REPORT_DEMO_MODE=true` environment toggle that serves realistic demo data dynamically for the Dashboard/Progress, Current Affairs, and Tests screens without modifying the real SQL tables, Chroma vectors, or user profile records. Implement a `seed_report_demo_data.py` script to toggle this setting in `.env`.
+- Reason: Simplifies generating reports and demo screenshots by instantly populating all areas with realistic mock data while avoiding database pollution or risk to real user learning data.
+- Status: Accepted
+
+## Removal of UPSC Notes Feature
+
 ## Independent premium frontend
 
 - Date: 2026-07-16

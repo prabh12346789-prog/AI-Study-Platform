@@ -45,6 +45,7 @@ class UPSCBook(Base):
     page_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     estimated_reading_minutes: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
     content_blocks_json: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)
+    resource_kind: Mapped[str] = mapped_column(String(64), default="study_book", server_default="study_book", nullable=False, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

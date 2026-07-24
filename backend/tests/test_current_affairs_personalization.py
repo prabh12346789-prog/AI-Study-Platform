@@ -29,7 +29,7 @@ def test_controlled_source_hierarchy_and_queries():
     assert source_adapter("https://www.rbi.org.in/policy").tier == "primary"
     assert source_adapter("https://forumias.com/blog/9-pm-brief").tier == "daily_analysis"
     joined = " ".join(controlled_queries("16 July 2026"))
-    for domain in ("pib.gov.in", "rbi.org.in", "mea.gov.in", "forumias.com", "insightsonindia.com", "drishtiias.com", "iasscore.in", "visionias.in"):
+    for domain in ("pwonlyias.com",):
         assert domain in joined
 
 

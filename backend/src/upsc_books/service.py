@@ -13,7 +13,7 @@ from src.core.config import settings
 from src.memory.storage import get_session_factory
 from src.rag.embeddings import EmbeddingService
 from src.rag.vector_store import VectorStore
-from src.upsc_notes.service import is_valid_pwonlyias_source_url, extract_pdf_blocks, normalize_subject
+from src.pwonlyias.shared import is_valid_pwonlyias_source_url, extract_pdf_blocks, normalize_subject
 from src.upsc_books.models import BookCollection, UPSCBook, BookChapter, SavedBook, BookReadingProgress
 
 log = logging.getLogger(__name__)
@@ -224,15 +224,14 @@ class UPSCBooksService:
 
         return {"discovered_count": len(discovered), "items": discovered}
 
-    def list_subjects(self):
+    def list_subjects(self, section: str | None = None):
         with self.sessions() as session:
-            rows = session.query(
+            query = session.query(
                 UPSCBook.normalized_subject,
                 func.count(UPSCBook.id).label("count")
             ).filter(
                 UPSCBook.provider == "PWOnlyIAS",
                 UPSCBook.active == True,
-                UPSCBook.content_status == "ready",
                 ~UPSCBook.title.ilike("%Isolated Test Book%"),
                 ~UPSCBook.title.ilike("%Prog Book%"),
                 ~UPSCBook.id.like("test-%"),
@@ -240,7 +239,15 @@ class UPSCBooksService:
                 ~UPSCBook.id.like("sample-%"),
                 ~UPSCBook.id.like("isolated-%"),
                 ~UPSCBook.id.like("prog-%")
-            ).group_by(UPSCBook.normalized_subject).all()
+            )
+            if section == "prelims":
+                query = query.filter(UPSCBook.prelims_relevant == True, UPSCBook.resource_kind == "study_book")
+            elif section == "mains":
+                query = query.filter(UPSCBook.mains_relevant == True, UPSCBook.resource_kind == "study_book")
+            elif section == "qa_bank":
+                query = query.filter(UPSCBook.resource_kind == "qa_bank")
+
+            rows = query.group_by(UPSCBook.normalized_subject).all()
             return [{"subject": r[0], "book_count": r[1]} for r in rows if r[0]]
 
     def list_collections(self, subject=None, language=None, exam_stage=None, search=None):
@@ -256,7 +263,8 @@ class UPSCBooksService:
             return list(session.scalars(query.order_by(BookCollection.created_at.desc())))
 
     def list_books(self, *, user_id="user_001", subject=None, collection_id=None,
-                   language=None, prelims_only=False, mains_only=False, search=None, saved_only=False):
+                   language=None, prelims_only=False, mains_only=False, search=None, saved_only=False,
+                   section=None):
         with self.sessions() as session:
             saved_ids = set(session.scalars(select(SavedBook.book_id).where(SavedBook.user_id == user_id)))
             query = select(UPSCBook).filter(
@@ -276,10 +284,19 @@ class UPSCBooksService:
                 query = query.filter(UPSCBook.collection_id == collection_id)
             if language:
                 query = query.filter(UPSCBook.language == language)
-            if prelims_only:
-                query = query.filter(UPSCBook.prelims_relevant == True)
-            if mains_only:
-                query = query.filter(UPSCBook.mains_relevant == True)
+            
+            if section == "prelims":
+                query = query.filter(UPSCBook.prelims_relevant == True, UPSCBook.resource_kind == "study_book")
+            elif section == "mains":
+                query = query.filter(UPSCBook.mains_relevant == True, UPSCBook.resource_kind == "study_book")
+            elif section == "qa_bank":
+                query = query.filter(UPSCBook.resource_kind == "qa_bank")
+            else:
+                if prelims_only:
+                    query = query.filter(UPSCBook.prelims_relevant == True)
+                if mains_only:
+                    query = query.filter(UPSCBook.mains_relevant == True)
+
             if saved_only:
                 query = query.filter(UPSCBook.id.in_(saved_ids))
             if search:
@@ -365,6 +382,7 @@ class UPSCBooksService:
             "language": book.language,
             "prelims_relevant": book.prelims_relevant,
             "mains_relevant": book.mains_relevant,
+            "resource_kind": getattr(book, "resource_kind", "study_book"),
             "estimated_reading_minutes": book.estimated_reading_minutes,
             "page_count": book.page_count,
             "chapters": [{"id": c.id, "title": c.title, "chapter_order": c.chapter_order, "page_start": c.page_start, "page_end": c.page_end} for c in chapters],
@@ -374,6 +392,7 @@ class UPSCBooksService:
             "official_pdf_url": book.official_pdf_url,
             "extraction_status": book.extraction_status,
             "content_status": book.content_status,
+            "indexing_status": book.indexing_status,
             "availability": avail,
             "saved": info["saved"],
             "progress_percentage": info["progress_percentage"]
@@ -465,7 +484,14 @@ class UPSCBooksService:
                     "subject": book.normalized_subject
                 }]
 
+            # Clear old vector chunks belonging to this book
+            try:
+                VectorStore().collection.delete(where={"document_id": book.id})
+            except Exception as e:
+                log.warning(f"Failed to clear old vector chunks for book {book.id}: {e}")
+
             embeddings = EmbeddingService.generate_embeddings(chunks)
             VectorStore().store_current_affairs(book.id, chunks, embeddings)
         except Exception as err:
             log.warning(f"Chroma RAG indexing skipped for book {book.id}: {err}")
+            raise err

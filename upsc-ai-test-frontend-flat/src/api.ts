@@ -39,6 +39,8 @@ export interface ActivitySummary {
   total_study_seconds: number; questions_asked: number; answers_generated: number; pdfs_uploaded: number
   subjects_studied: number; top_subject: string | null; top_topic: string | null
   subject_breakdown: ActivityBreakdown[]; topic_breakdown: ActivityBreakdown[]; recent_events: ActivityEvent[]
+  daily_breakdown?: Array<{ date: string; study_seconds: number; event_count: number }>
+  demo_mode?: boolean
 }
 
 export interface LearnerProfile {
@@ -81,6 +83,7 @@ export interface MentorDashboardData {
   recommended_videos: VideoRecommendation[]
   profile: { preferred_language: string; preferred_depth: string; preferred_format: string; daily_target_minutes: number }
   recent_activity: ActivityEvent[]
+  demo_mode?: boolean
 }
 
 export interface VideoResource {
@@ -129,7 +132,7 @@ export interface CurrentAffairsArticle {
   qa_pairs_json?: Array<{ question: string; options?: string[]; answer?: string; explanation?: string; page_ref?: number; marks?: number; word_limit?: number }> | null
 }
 export interface CurrentAffairsBrief { id: string; brief_date: string; language: string; title: string; overview: string; article_ids_json: string[]; subject_breakdown_json: Record<string, string[]>; prelims_points_json: string[]; mains_points_json: string[]; updated_at: string }
-export interface CurrentAffairsSummary { unread_important_stories: number; top_subject: string | null; saved_articles: number; daily_brief_completed: boolean; today_quiz_completed: boolean; latest_quiz_score: number | null; high_risk_article_count: number; next_revision: string | null }
+export interface CurrentAffairsSummary { unread_important_stories: number; top_subject: string | null; saved_articles: number; daily_brief_completed: boolean; today_quiz_completed: boolean; latest_quiz_score: number | null; high_risk_article_count: number; next_revision: string | null; demo_mode?: boolean }
 export interface CurrentAffairsQuizQuestion { id: string; question_type: string; question: string; options_json: string[]; article_id: string; source_url: string; subject: string; topic: string; difficulty: string }
 export interface CurrentAffairsQuiz { id: string; title: string; period_type: string; date_from: string; date_to: string; question_count: number; difficulty: string; status: string; article_ids_json: string[]; questions: CurrentAffairsQuizQuestion[] }
 export interface CurrentAffairsQuizResult { id: string; score: number; total: number; percentage: number; results: Array<{ question_id: string; correct: boolean; submitted_answer: string; correct_answer: string; explanation: string; article_id: string; source_url: string; topic: string }>; weak_article_ids: string[]; weak_topics: string[] }
@@ -429,75 +432,6 @@ export const submitCurrentAffairsQuiz = (id: string, answers: Array<{ question_i
 export const getCurrentAffairsRetentionOverview = () => currentAffairsRequest<CurrentAffairsRetentionOverview>('/retention/overview')
 export const markCurrentAffairsRevised = (id: string) => currentAffairsRequest<CurrentAffairsRetention>(`/retention/${id}/revise`, { method: 'POST' })
 
-// UPSC Notes API
-export interface NoteSubjectCount { subject: string; note_count: number }
-export interface NoteCollectionItem { id: string; provider: string; title: string; slug: string; collection_type: string; description?: string; language: string; exam_stage: string; official_source_url: string }
-export interface UPSCNote {
-  id: string
-  collection_id?: string | null
-  provider: string
-  title: string
-  slug: string
-  subject: string
-  original_subject?: string | null
-  topic: string
-  description?: string | null
-  language: string
-  prelims_relevant: boolean
-  mains_relevant: boolean
-  official_source_url: string
-  official_pdf_url?: string | null
-  publication_year?: number | null
-  content_status: string
-  extraction_status: string
-  page_count: number
-  estimated_reading_minutes: number
-  saved: boolean
-  progress_percentage: number
-  last_opened_at?: string | null
-}
-export interface UPSCNoteContentResponse {
-  id: string
-  slug: string
-  title: string
-  provider: string
-  subject: string
-  topic: string
-  description?: string | null
-  language: string
-  prelims_relevant: boolean
-  mains_relevant: boolean
-  estimated_reading_minutes: number
-  page_count: number
-  content_blocks: ContentBlock[]
-  page_references: string[]
-  official_source_url: string
-  official_pdf_url?: string | null
-  extraction_status: string
-  content_status: string
-  availability: 'available' | 'unavailable'
-  saved: boolean
-  progress_percentage: number
-}
-
-async function upscNotesRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/upsc-notes${path}`, init)
-  if (!response.ok) throw new Error(`UPSC Notes request failed (${response.status})`)
-  return response.status === 204 ? (undefined as T) : response.json()
-}
-
-export const getUpscNoteSubjects = () => upscNotesRequest<NoteSubjectCount[]>('/subjects')
-export const getUpscNoteCollections = (params = '') => upscNotesRequest<NoteCollectionItem[]>(`/collections${params ? `?${params}` : ''}`)
-export const getUpscNotes = (params = '') => upscNotesRequest<UPSCNote[]>(`${params ? `?${params}` : ''}`)
-export const getUpscNoteContent = (id: string) => upscNotesRequest<UPSCNoteContentResponse>(`/${id}/content`)
-export const saveUpscNote = (id: string, saved: boolean) => upscNotesRequest<void>(`/${id}/save`, { method: saved ? 'DELETE' : 'POST' })
-export const updateUpscNoteProgress = (id: string, progress_percentage: number, last_position = 0) =>
-  upscNotesRequest<{ note_id: string; progress_percentage: number }>(`/${id}/progress`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ progress_percentage, last_position })
-  })
-
 // UPSC Books API
 export interface BookSubjectCount { subject: string; book_count: number }
 export interface BookCollectionItem { id: string; provider: string; title: string; slug: string; collection_type: string; description?: string; language: string; exam_stage: string; official_source_url: string }
@@ -514,11 +448,13 @@ export interface UPSCBook {
   language: string
   prelims_relevant: boolean
   mains_relevant: boolean
+  resource_kind?: 'study_book' | 'qa_bank'
   official_source_url: string
   official_pdf_url?: string | null
   publication_year?: number | null
   content_status: string
   extraction_status: string
+  indexing_status: string
   page_count: number
   estimated_reading_minutes: number
   saved: boolean
@@ -536,6 +472,7 @@ export interface UPSCBookContentResponse {
   language: string
   prelims_relevant: boolean
   mains_relevant: boolean
+  resource_kind?: 'study_book' | 'qa_bank'
   estimated_reading_minutes: number
   page_count: number
   chapters: BookChapterItem[]
@@ -545,6 +482,7 @@ export interface UPSCBookContentResponse {
   official_pdf_url?: string | null
   extraction_status: string
   content_status: string
+  indexing_status: string
   availability: 'available' | 'unavailable'
   saved: boolean
   progress_percentage: number
@@ -556,7 +494,7 @@ async function upscBooksRequest<T>(path: string, init?: RequestInit): Promise<T>
   return response.status === 204 ? (undefined as T) : response.json()
 }
 
-export const getUpscBookSubjects = () => upscBooksRequest<BookSubjectCount[]>('/subjects')
+export const getUpscBookSubjects = (params = '') => upscBooksRequest<BookSubjectCount[]>(`/subjects${params ? `?${params}` : ''}`)
 export const getUpscBookCollections = (params = '') => upscBooksRequest<BookCollectionItem[]>(`/collections${params ? `?${params}` : ''}`)
 export const getUpscBooks = (params = '') => upscBooksRequest<UPSCBook[]>(`${params ? `?${params}` : ''}`)
 export const getUpscBook = (id: string) => upscBooksRequest<UPSCBook>(`/${id}`)

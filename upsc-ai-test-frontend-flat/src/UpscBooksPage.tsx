@@ -7,7 +7,8 @@ import {
   getUpscBookSubjects,
   getUpscBooks,
   saveUpscBook,
-  updateUpscBookProgress
+  updateUpscBookProgress,
+  API_BASE_URL
 } from './api'
 import type { AppPage } from './AppShell'
 
@@ -32,13 +33,19 @@ const MANDATED_SUBJECTS = [
 ]
 
 export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
+  const [activeTab, setActiveTab] = useState<'prelims' | 'mains' | 'qa_bank'>(() => {
+    const saved = localStorage.getItem('upsc_books_active_tab')
+    if (saved === 'prelims' || saved === 'mains' || saved === 'qa_bank') {
+      return saved
+    }
+    return 'mains'
+  })
+  const [tabCounts, setTabCounts] = useState<Record<string, number>>({ prelims: 0, mains: 0, qa_bank: 0 })
   const [subjectCounts, setSubjectCounts] = useState<Record<string, number>>({})
   const [books, setBooks] = useState<UPSCBook[]>([])
   const [selectedSubject, setSelectedSubject] = useState<string>('All Subjects')
 
   const [search, setSearch] = useState('')
-  const [prelimsOnly, setPrelimsOnly] = useState(false)
-  const [mainsOnly, setMainsOnly] = useState(false)
   const [savedOnly, setSavedOnly] = useState(false)
 
   const [loading, setLoading] = useState(true)
@@ -50,10 +57,28 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
   const [selectedChapterId, setSelectedChapterId] = useState<string | undefined>(undefined)
   const [readerLoading, setReaderLoading] = useState(false)
   const [progressPct, setProgressPct] = useState(0)
+  const [readerTab, setReaderTab] = useState<'material' | 'pdf'>('material')
 
-  async function fetchSubjectCounts() {
+  async function fetchTabCounts() {
     try {
-      const counts = await getUpscBookSubjects()
+      const [p, m, q] = await Promise.all([
+        getUpscBooks('section=prelims'),
+        getUpscBooks('section=mains'),
+        getUpscBooks('section=qa_bank')
+      ])
+      setTabCounts({
+        prelims: p.length,
+        mains: m.length,
+        qa_bank: q.length
+      })
+    } catch {
+      // Ignore
+    }
+  }
+
+  async function fetchSubjectCounts(section: string) {
+    try {
+      const counts = await getUpscBookSubjects(`section=${section}`)
       const map: Record<string, number> = {}
       counts.forEach(s => { map[s.subject] = s.book_count })
       setSubjectCounts(map)
@@ -62,18 +87,25 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
     }
   }
 
-  async function loadBooks(subj: string) {
+  async function loadBooks(subj: string, section: string) {
     setLoading(true)
     setError('')
     try {
-      const param = subj !== 'All Subjects' ? `subject=${encodeURIComponent(subj)}` : ''
-      const booksData = await getUpscBooks(param)
+      const paramParts = [`section=${section}`]
+      if (subj !== 'All Subjects') {
+        paramParts.push(`subject=${encodeURIComponent(subj)}`)
+      }
+      const booksData = await getUpscBooks(paramParts.join('&'))
       // Exclude any synthetic test books
       const clean = booksData.filter(b =>
         !b.title.toLowerCase().includes('isolated test book') &&
         !b.title.toLowerCase().includes('prog book') &&
+        !b.title.toLowerCase().includes('both relevant book') &&
+        !b.title.toLowerCase().includes('evil book') &&
         !b.id.startsWith('test-') &&
-        !b.id.startsWith('isolated-')
+        !b.id.startsWith('isolated-') &&
+        !b.id.startsWith('demo-') &&
+        !b.id.startsWith('sample-')
       )
       setBooks(clean)
     } catch (reason) {
@@ -84,14 +116,21 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
   }
 
   useEffect(() => {
-    void fetchSubjectCounts()
-    void loadBooks(selectedSubject)
-  }, [selectedSubject])
+    void fetchSubjectCounts(activeTab)
+    void fetchTabCounts()
+    void loadBooks(selectedSubject, activeTab)
+  }, [selectedSubject, activeTab])
+
+  const handleTabChange = (newTab: 'prelims' | 'mains' | 'qa_bank') => {
+    setActiveTab(newTab)
+    localStorage.setItem('upsc_books_active_tab', newTab)
+  }
 
   async function handleRefresh() {
     setRefreshing(true)
-    await fetchSubjectCounts()
-    await loadBooks(selectedSubject)
+    await fetchSubjectCounts(activeTab)
+    await fetchTabCounts()
+    await loadBooks(selectedSubject, activeTab)
     setRefreshing(false)
   }
 
@@ -109,12 +148,6 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
 
   const filteredBooks = useMemo(() => {
     let result = books
-    if (prelimsOnly) {
-      result = result.filter(b => b.prelims_relevant)
-    }
-    if (mainsOnly) {
-      result = result.filter(b => b.mains_relevant)
-    }
     if (savedOnly) {
       result = result.filter(b => b.saved)
     }
@@ -126,7 +159,7 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
       )
     }
     return result
-  }, [books, prelimsOnly, mainsOnly, savedOnly, search])
+  }, [books, savedOnly, search])
 
   async function toggleSave(book: UPSCBook) {
     await saveUpscBook(book.id, book.saved)
@@ -136,9 +169,10 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
     }
   }
 
-  async function openReader(book: UPSCBook, chapterId?: string) {
+  async function openReader(book: UPSCBook, chapterId?: string, initialTab: 'material' | 'pdf' = 'material') {
     setReaderBook(book)
     setSelectedChapterId(chapterId)
+    setReaderTab(initialTab)
     setReaderLoading(true)
     setProgressPct(book.progress_percentage || 10)
     try {
@@ -198,6 +232,55 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
         </div>
       </header>
 
+      {/* Three Primary Sections Tabs */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #334155', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <button
+          style={{
+            padding: '10px 20px',
+            background: 'none',
+            border: 'none',
+            color: activeTab === 'prelims' ? '#60a5fa' : '#94a3b8',
+            borderBottom: activeTab === 'prelims' ? '3px solid #3b82f6' : '3px solid transparent',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+          onClick={() => handleTabChange('prelims')}
+        >
+          Prelims Books ({tabCounts.prelims})
+        </button>
+        <button
+          style={{
+            padding: '10px 20px',
+            background: 'none',
+            border: 'none',
+            color: activeTab === 'mains' ? '#60a5fa' : '#94a3b8',
+            borderBottom: activeTab === 'mains' ? '3px solid #3b82f6' : '3px solid transparent',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+          onClick={() => handleTabChange('mains')}
+        >
+          Mains Books ({tabCounts.mains})
+        </button>
+        <button
+          style={{
+            padding: '10px 20px',
+            background: 'none',
+            border: 'none',
+            color: activeTab === 'qa_bank' ? '#60a5fa' : '#94a3b8',
+            borderBottom: activeTab === 'qa_bank' ? '3px solid #3b82f6' : '3px solid transparent',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+          onClick={() => handleTabChange('qa_bank')}
+        >
+          Q/A Bank ({tabCounts.qa_bank})
+        </button>
+      </div>
+
       {/* Mandatory Subject Selector & Filter Controls Bar */}
       <section className="premium-card" style={{ padding: '16px', background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', marginBottom: '24px' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -237,14 +320,6 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
           {/* Checkboxes */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '18px' }}>
             <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem', cursor: 'pointer', color: '#e2e8f0' }}>
-              <input type="checkbox" checked={prelimsOnly} onChange={e => setPrelimsOnly(e.target.checked)} />
-              Prelims
-            </label>
-            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem', cursor: 'pointer', color: '#e2e8f0' }}>
-              <input type="checkbox" checked={mainsOnly} onChange={e => setMainsOnly(e.target.checked)} />
-              Mains
-            </label>
-            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem', cursor: 'pointer', color: '#e2e8f0' }}>
               <input type="checkbox" checked={savedOnly} onChange={e => setSavedOnly(e.target.checked)} />
               Saved Only
             </label>
@@ -261,14 +336,14 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
         <section className="premium-card" style={{ padding: '48px 24px', background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', textAlign: 'center', maxWidth: '650px', margin: '30px auto' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📚</div>
           <h2 style={{ fontSize: '1.3rem', color: '#f8fafc', marginBottom: '8px' }}>
-            {selectedSubject === 'All Subjects'
-              ? 'No verified PWOnlyIAS books have been imported yet.'
-              : 'No verified books available yet'}
+            {activeTab === 'prelims' && "No verified Prelims books have been imported yet."}
+            {activeTab === 'mains' && "No verified Mains books have been imported yet."}
+            {activeTab === 'qa_bank' && "No verified Q/A Bank resources have been imported yet."}
           </h2>
           <p style={{ fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.6', marginBottom: '24px' }}>
-            {selectedSubject === 'All Subjects'
-              ? 'Books will appear here after a publicly accessible PWOnlyIAS PDF is verified, extracted and indexed.'
-              : `No publicly accessible PWOnlyIAS book has been verified and imported for ${selectedSubject} yet.`}
+            {activeTab === 'prelims' && "Import a PWOnlyIAS PDF and classify it as Prelims to make it available here."}
+            {activeTab === 'mains' && "Import a PWOnlyIAS PDF and classify it as Mains to make it available here."}
+            {activeTab === 'qa_bank' && "Question banks and solved-practice PDFs classified as Q/A Bank will appear here."}
           </p>
           <button
             className="send-button"
@@ -315,7 +390,7 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
                     </div>
                     <small style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{Math.round(b.progress_percentage)}% completed</small>
                     <div style={{ marginTop: '10px' }}>
-                      <button className="send-button" style={{ padding: '4px 12px', fontSize: '0.85rem' }} onClick={() => openReader(b)}>
+                      <button className="send-button" style={{ padding: '4px 12px', fontSize: '0.85rem' }} onClick={() => openReader(b, undefined, 'material')}>
                         Resume Book
                       </button>
                     </div>
@@ -336,8 +411,14 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#60a5fa' }}>{book.subject}</span>
                     <div style={{ display: 'flex', gap: '4px' }}>
-                      {book.prelims_relevant && <span style={{ fontSize: '0.7rem', background: '#064e3b', color: '#a7f3d0', padding: '2px 6px', borderRadius: '4px' }}>Prelims</span>}
-                      {book.mains_relevant && <span style={{ fontSize: '0.7rem', background: '#7c2d12', color: '#ffedd5', padding: '2px 6px', borderRadius: '4px' }}>Mains</span>}
+                      {book.resource_kind === 'qa_bank' ? (
+                        <span style={{ fontSize: '0.7rem', background: '#3b82f6', color: '#eff6ff', padding: '2px 6px', borderRadius: '4px' }}>Q/A Bank</span>
+                      ) : (
+                        <>
+                          {book.prelims_relevant && <span style={{ fontSize: '0.7rem', background: '#064e3b', color: '#a7f3d0', padding: '2px 6px', borderRadius: '4px' }}>Prelims</span>}
+                          {book.mains_relevant && <span style={{ fontSize: '0.7rem', background: '#7c2d12', color: '#ffedd5', padding: '2px 6px', borderRadius: '4px' }}>Mains</span>}
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -350,17 +431,15 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #334155' }}>
-                    <button className="send-button" style={{ padding: '6px 14px', fontSize: '0.85rem' }} onClick={() => openReader(book)}>
+                    <button className="send-button" style={{ padding: '6px 14px', fontSize: '0.85rem' }} onClick={() => openReader(book, undefined, 'material')}>
                       Read Book
+                    </button>
+                    <button className="send-button" style={{ padding: '6px 14px', fontSize: '0.85rem', background: '#3b82f6', color: '#f8fafc' }} onClick={() => openReader(book, undefined, 'pdf')}>
+                      View PDF
                     </button>
                     <a href={book.official_source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8rem', color: '#60a5fa' }}>
                       Official Source
                     </a>
-                    {book.official_pdf_url && (
-                      <a href={book.official_pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8rem', color: '#34d399' }}>
-                        View PDF
-                      </a>
-                    )}
                     <button onClick={() => void toggleSave(book)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem', color: '#94a3b8' }}>
                       {book.saved ? '♥ Saved' : '♡ Save'}
                     </button>
@@ -389,18 +468,45 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
               </button>
             </div>
 
-            {/* Reading progress bar */}
-            <div style={{ background: '#1e293b', height: '4px', borderRadius: '2px', marginBottom: '14px' }}>
-              <div style={{ background: '#3b82f6', height: '100%', width: `${progressPct}%`, borderRadius: '2px', transition: 'width 0.3s' }} />
+            {/* Tabs for Read Material vs Original PDF */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #334155', marginBottom: '16px' }}>
+              <button
+                style={{
+                  padding: '8px 16px',
+                  background: 'none',
+                  border: 'none',
+                  color: readerTab === 'material' ? '#60a5fa' : '#94a3b8',
+                  borderBottom: readerTab === 'material' ? '2px solid #3b82f6' : '2px solid transparent',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setReaderTab('material')}
+              >
+                Read Material
+              </button>
+              <button
+                style={{
+                  padding: '8px 16px',
+                  background: 'none',
+                  border: 'none',
+                  color: readerTab === 'pdf' ? '#60a5fa' : '#94a3b8',
+                  borderBottom: readerTab === 'pdf' ? '2px solid #3b82f6' : '2px solid transparent',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setReaderTab('pdf')}
+              >
+                Original PDF
+              </button>
             </div>
 
             {/* Chapter Selector */}
-            {readerContent?.chapters && readerContent.chapters.length > 0 && (
+            {readerContent?.chapters && readerContent.chapters.length > 0 && readerTab === 'material' && (
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#e2e8f0' }}>Chapters:</span>
                 <button
                   style={{ padding: '4px 10px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #334155', background: !selectedChapterId ? '#3b82f6' : '#1e293b', color: '#f8fafc', cursor: 'pointer' }}
-                  onClick={() => openReader(readerBook, undefined)}
+                  onClick={() => openReader(readerBook, undefined, 'material')}
                 >
                   All Chapters
                 </button>
@@ -418,7 +524,7 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
 
             {readerLoading ? (
               <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>Loading book content...</div>
-            ) : (
+            ) : readerTab === 'material' ? (
               <div
                 onScroll={handleScroll}
                 style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '8px' }}
@@ -458,35 +564,122 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
                 ) : (
                   <div style={{ padding: '16px', background: '#451a1a', color: '#fca5a5', borderRadius: '8px', fontSize: '0.9rem' }}>
                     {readerBook.extraction_status === 'image_only'
-                      ? 'This book could not be extracted. You can still view the original PDF.'
+                      ? 'This book could not be extracted. You can still view the original PDF in the Original PDF tab.'
                       : 'Book content summary ready.'}
                   </div>
                 )}
+              </div>
+            ) : (
+              /* Original PDF Tab using secure endpoint */
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
+                <object
+                  data={`${API_BASE_URL}/upsc-books/${readerBook.id}/pdf`}
+                  type="application/pdf"
+                  style={{ width: '100%', height: '100%', minHeight: '520px', border: 'none', borderRadius: '8px' }}
+                >
+                  <div style={{ padding: '24px', textAlign: 'center', background: '#1e293b', borderRadius: '8px' }}>
+                    <p style={{ marginBottom: '16px', color: '#94a3b8' }}>PDF preview is not supported by your browser or cannot be embedded.</p>
+                    <a
+                      href={`${API_BASE_URL}/upsc-books/${readerBook.id}/pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="send-button"
+                      style={{ display: 'inline-block', textDecoration: 'none', padding: '8px 16px' }}
+                    >
+                      Open PDF in New Tab
+                    </a>
+                  </div>
+                </object>
               </div>
             )}
 
             {/* Reader Footer Actions */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #334155', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button className="send-button" style={{ padding: '8px 14px', fontSize: '0.85rem' }} onClick={() => { setReaderBook(null); onNavigate('chat') }}>
+              <button
+                className="send-button"
+                disabled={readerBook.indexing_status !== 'indexed'}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '0.85rem',
+                  opacity: readerBook.indexing_status === 'indexed' ? 1 : 0.5,
+                  cursor: readerBook.indexing_status === 'indexed' ? 'pointer' : 'not-allowed'
+                }}
+                onClick={() => {
+                  if (readerBook.indexing_status === 'indexed') {
+                    setReaderBook(null);
+                    onNavigate('chat');
+                  }
+                }}
+              >
                 Ask AI About Book
               </button>
-              <button className="send-button" style={{ padding: '8px 14px', background: '#059669', fontSize: '0.85rem' }} onClick={() => { setReaderBook(null); onNavigate('quizzes') }}>
-                Generate Prelims Quiz
-              </button>
-              <button className="send-button" style={{ padding: '8px 14px', background: '#d97706', fontSize: '0.85rem' }} onClick={() => { setReaderBook(null); onNavigate('quizzes') }}>
-                Mains Practice
-              </button>
-              <button className="send-button" style={{ padding: '8px 14px', background: '#4f46e5', fontSize: '0.85rem' }} onClick={() => { setReaderBook(null); onNavigate('revision') }}>
-                Quick Revision
-              </button>
+              {readerBook.resource_kind !== 'qa_bank' && (
+                <>
+                  <button
+                    className="send-button"
+                    disabled={!readerBook.prelims_relevant || readerBook.indexing_status !== 'indexed'}
+                    style={{
+                      padding: '8px 14px',
+                      background: '#059669',
+                      fontSize: '0.85rem',
+                      opacity: (readerBook.prelims_relevant && readerBook.indexing_status === 'indexed') ? 1 : 0.5,
+                      cursor: (readerBook.prelims_relevant && readerBook.indexing_status === 'indexed') ? 'pointer' : 'not-allowed'
+                    }}
+                    onClick={() => {
+                      if (readerBook.prelims_relevant && readerBook.indexing_status === 'indexed') {
+                        setReaderBook(null);
+                        onNavigate('quizzes');
+                      }
+                    }}
+                  >
+                    Generate Prelims Quiz
+                  </button>
+                  <button
+                    className="send-button"
+                    disabled={!readerBook.mains_relevant || readerBook.indexing_status !== 'indexed'}
+                    style={{
+                      padding: '8px 14px',
+                      background: '#d97706',
+                      fontSize: '0.85rem',
+                      opacity: (readerBook.mains_relevant && readerBook.indexing_status === 'indexed') ? 1 : 0.5,
+                      cursor: (readerBook.mains_relevant && readerBook.indexing_status === 'indexed') ? 'pointer' : 'not-allowed'
+                    }}
+                    onClick={() => {
+                      if (readerBook.mains_relevant && readerBook.indexing_status === 'indexed') {
+                        setReaderBook(null);
+                        onNavigate('quizzes');
+                      }
+                    }}
+                  >
+                    Mains Practice
+                  </button>
+                  <button
+                    className="send-button"
+                    disabled={readerBook.indexing_status !== 'indexed'}
+                    style={{
+                      padding: '8px 14px',
+                      background: '#4f46e5',
+                      fontSize: '0.85rem',
+                      opacity: readerBook.indexing_status === 'indexed' ? 1 : 0.5,
+                      cursor: readerBook.indexing_status === 'indexed' ? 'pointer' : 'not-allowed'
+                    }}
+                    onClick={() => {
+                      if (readerBook.indexing_status === 'indexed') {
+                        setReaderBook(null);
+                        onNavigate('revision');
+                      }
+                    }}
+                  >
+                    Quick Revision
+                  </button>
+                </>
+              )}
               <a href={readerBook.official_source_url} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px', border: '1px solid #334155', borderRadius: '6px', textDecoration: 'none', color: '#60a5fa', fontSize: '0.85rem', fontWeight: '500' }}>
                 Official Source
               </a>
-              {readerBook.official_pdf_url && (
-                <a href={readerBook.official_pdf_url} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px', border: '1px solid #059669', color: '#34d399', borderRadius: '6px', textDecoration: 'none', fontSize: '0.85rem', fontWeight: '500' }}>
-                  View PDF
-                </a>
-              )}
+              <a href={`${API_BASE_URL}/upsc-books/${readerBook.id}/pdf`} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px', border: '1px solid #059669', color: '#34d399', borderRadius: '6px', textDecoration: 'none', fontSize: '0.85rem', fontWeight: '500' }}>
+                Open PDF
+              </a>
               <button onClick={() => void toggleSave(readerBook)} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #334155', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', color: '#94a3b8' }}>
                 {readerBook.saved ? '♥ Saved' : '♡ Save Book'}
               </button>

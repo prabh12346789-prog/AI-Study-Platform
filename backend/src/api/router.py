@@ -3,13 +3,13 @@ from fastapi import APIRouter
 
 log = logging.getLogger("startup")
 log.info("Router registration: importing lightweight route modules")
-from src.api.routes import activity, chat, conversations, current_affairs, mastery, mentor, pdf, profile, upsc_books, upsc_notes, videos, visual_roadmaps
+from src.api.routes import activity, chat, conversations, current_affairs, mastery, mentor, pdf, profile, tests, upsc_books, videos, visual_roadmaps
 log.info("Router registration: route and model imports completed")
 
 api_router = APIRouter()
 
+api_router.include_router(tests.router)
 api_router.include_router(upsc_books.router, prefix="/upsc-books", tags=["UPSC Books"])
-api_router.include_router(upsc_notes.router, prefix="/upsc-notes", tags=["UPSC Notes"])
 api_router.include_router(current_affairs.router, prefix="/current-affairs", tags=["Current Affairs"])
 
 api_router.include_router(visual_roadmaps.router, prefix="/visual-roadmaps", tags=["Visual Roadmaps"])

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     CA_DAILY_LANGUAGE: str = "english"
     CA_DAILY_TIME: str = "07:00"
     CURRENT_AFFAIRS_CONTENT_MODE: str = "private_local"
+    REPORT_DEMO_MODE: bool = True
 
     @field_validator("DEBUG", mode="before")
     @classmethod

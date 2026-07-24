@@ -30,11 +30,13 @@ def book_response(item: dict):
         "language": r.language,
         "prelims_relevant": r.prelims_relevant,
         "mains_relevant": r.mains_relevant,
+        "resource_kind": getattr(r, "resource_kind", "study_book"),
         "official_source_url": r.official_source_url,
         "official_pdf_url": r.official_pdf_url,
         "publication_year": r.publication_year,
         "content_status": r.content_status,
         "extraction_status": r.extraction_status,
+        "indexing_status": r.indexing_status,
         "page_count": r.page_count,
         "estimated_reading_minutes": r.estimated_reading_minutes,
         "saved": item["saved"],
@@ -44,8 +46,8 @@ def book_response(item: dict):
 
 
 @router.get("/subjects")
-def list_subjects():
-    return service().list_subjects()
+def list_subjects(section: str | None = Query(None)):
+    return service().list_subjects(section=section)
 
 
 @router.get("/collections")
@@ -63,10 +65,11 @@ def list_saved():
 @router.get("")
 def list_books(subject: str | None = None, collection_id: str | None = None,
                language: str | None = None, prelims_only: bool = False, mains_only: bool = False,
-               search: str | None = None, saved_only: bool = False):
+               search: str | None = None, saved_only: bool = False, section: str | None = Query(None)):
     items = service().list_books(
         subject=subject, collection_id=collection_id, language=language,
-        prelims_only=prelims_only, mains_only=mains_only, search=search, saved_only=saved_only
+        prelims_only=prelims_only, mains_only=mains_only, search=search, saved_only=saved_only,
+        section=section
     )
     return [book_response(item) for item in items]
 
@@ -107,3 +110,26 @@ def unsave_book(book_id: str):
 @router.put("/{book_id}/progress")
 def update_progress(book_id: str, payload: BookProgressUpdatePayload):
     return service().update_progress(book_id, chapter_id=payload.chapter_id, progress_percentage=payload.progress_percentage, last_position=payload.last_position)
+
+
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+@router.get("/{book_id}/pdf")
+def get_book_pdf(book_id: str):
+    if ".." in book_id or "/" in book_id or "\\" in book_id:
+        raise HTTPException(status_code=400, detail="Invalid resource ID")
+    info = service().get_book(book_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="UPSC Book not found")
+    backend_root = Path(__file__).resolve().parents[3]
+    pdf_path = backend_root / "data" / "pwonlyias" / "books" / book_id / "original.pdf"
+    if not pdf_path.is_file():
+        raise HTTPException(status_code=404, detail="Original PDF not found")
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename="original.pdf",
+        content_disposition_type="inline"
+    )
+

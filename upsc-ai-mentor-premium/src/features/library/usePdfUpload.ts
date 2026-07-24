@@ -1,4 +1,0 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRef } from 'react'
-import { pdfQueryKeys, uploadPdf } from '../../api/pdf'
-export function usePdfUpload(){const client=useQueryClient(),guard=useRef(false),controller=useRef<AbortController|null>(null);const mutation=useMutation({mutationFn:async(file:File)=>{if(guard.current)throw new Error('An upload is already in progress.');guard.current=true;controller.current=new AbortController();try{return await uploadPdf(file,controller.current.signal)}finally{guard.current=false;controller.current=null}},onSuccess:async()=>{await Promise.all([client.invalidateQueries({queryKey:pdfQueryKeys.documents}),client.invalidateQueries({queryKey:['dashboard','activity-today']}),client.invalidateQueries({queryKey:['dashboard','mentor']})])}});return{...mutation,cancel:()=>controller.current?.abort()}}

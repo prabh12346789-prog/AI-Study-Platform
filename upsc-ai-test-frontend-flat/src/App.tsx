@@ -5,10 +5,10 @@ import { MentorDashboard } from './MentorDashboard'
 import { VideoRecommendations } from './VideoRecommendations'
 import { VisualLearningPage } from './VisualLearningPage'
 import { CurrentAffairsPage } from './CurrentAffairsPage'
-import { UpscNotesPage } from './UpscNotesPage'
 import { UpscBooksPage } from './UpscBooksPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
 import { AppPage, AppShell } from './AppShell'
+import { TestsPage } from './TestsPage'
 import { LibraryPage, ProfilePage, ProgressPage, QuizzesPage, RevisionPage } from './StudyHubPages'
 import { AssistantPanel, ConversationRail, SourceDisclosure } from './ChatPanels'
 import {
@@ -104,6 +104,11 @@ export default function App() {
     return () => controller.abort()
   }, [])
 
+  useEffect(() => {
+    if (page as string === 'upsc_notes') {
+      setPage('upsc_books')
+    }
+  }, [page])
   async function refreshConversations() {
     setConversations(await listConversations())
   }
@@ -372,11 +377,11 @@ export default function App() {
       </>}>
         {page === 'visual' && <VisualLearningPage onAsk={askFromRoadmap} />}
         {page === 'current_affairs' && <CurrentAffairsPage onNavigate={setPage} />}
-        {page === 'upsc_notes' && <UpscNotesPage onNavigate={setPage} />}
         {page === 'upsc_books' && <UpscBooksPage onNavigate={setPage} />}
         {page === 'library' && <LibraryPage onUpload={() => fileRef.current?.click()} uploadState={uploadState} refreshKey={libraryRevision} onAsk={askAboutDocument} onVisual={() => setPage('visual')} />}
         {page === 'revision' && <RevisionPage trackingActive={trackingActive} />}
         {page === 'quizzes' && <QuizzesPage onNavigate={setPage} />}
+        {page === 'tests' && <TestsPage />}
         {page === 'progress' && <ProgressPage trackingActive={trackingActive} />}
         {page === 'profile' && <ProfilePage />}
         {page === 'settings' && <ProfilePage settings />}

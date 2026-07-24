@@ -71,12 +71,17 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
     if (activeTab === 'weekly') params.set('cadence', 'weekly')
     if (activeTab === 'monthly') params.set('cadence', 'monthly')
     if (activeTab === 'subject' && selectedSubject !== 'All PWOnlyIAS Subjects') params.set('subject', selectedSubject)
+    if (activeTab === 'qa') params.set('content_type', 'prelims_qa')
     if (search) params.set('search', search)
 
     try {
       const data = await getCurrentAffairsArticles(params.toString())
       const clean = data.filter(a =>
-        (!a.publisher || a.publisher.toLowerCase().includes('pwonlyias') || a.publisher === 'PWOnlyIAS') &&
+        (!a.publisher || 
+         a.publisher.toLowerCase().includes('pwonlyias') || 
+         a.publisher === 'PWOnlyIAS' || 
+         ['pib', 'rbi', 'mea', 'forumias', 'insightsias', 'drishti ias'].includes(a.publisher.toLowerCase()) ||
+         a.id.startsWith('dmy-')) &&
         !a.title.toLowerCase().includes('pending backfill') &&
         !a.title.toLowerCase().includes('image only pdf') &&
         !a.title.toLowerCase().includes('mode test') &&
@@ -108,7 +113,11 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
     event?.preventDefault()
     const catalog = await getCurrentAffairsArticles()
     const pwCatalog = catalog.filter(a =>
-      (!a.publisher || a.publisher.toLowerCase().includes('pwonlyias') || a.publisher === 'PWOnlyIAS') &&
+      (!a.publisher || 
+       a.publisher.toLowerCase().includes('pwonlyias') || 
+       a.publisher === 'PWOnlyIAS' || 
+       ['pib', 'rbi', 'mea', 'forumias', 'insightsias', 'drishti ias'].includes(a.publisher.toLowerCase()) ||
+       a.id.startsWith('dmy-')) &&
       !a.title.toLowerCase().includes('pending backfill') &&
       !a.title.toLowerCase().includes('image only pdf') &&
       !a.title.toLowerCase().includes('mode test') &&
@@ -131,7 +140,11 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
       .then(([catalog, overview]) => {
         if (!active) return
         const pwCatalog = catalog.filter(a =>
-          (!a.publisher || a.publisher.toLowerCase().includes('pwonlyias') || a.publisher === 'PWOnlyIAS') &&
+          (!a.publisher || 
+           a.publisher.toLowerCase().includes('pwonlyias') || 
+           a.publisher === 'PWOnlyIAS' || 
+           ['pib', 'rbi', 'mea', 'forumias', 'insightsias', 'drishti ias'].includes(a.publisher.toLowerCase()) ||
+           a.id.startsWith('dmy-')) &&
           !a.title.toLowerCase().includes('pending backfill') &&
           !a.title.toLowerCase().includes('image only pdf') &&
           !a.title.toLowerCase().includes('mode test') &&
@@ -204,13 +217,16 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
       <header className="phase-page-head" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <p className="eyebrow" style={{ color: '#60a5fa', fontWeight: 'bold', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Source: PWOnlyIAS</p>
-            <h1 style={{ margin: '4px 0', fontSize: '1.8rem', color: '#f8fafc' }}>
+            <p className="eyebrow" style={{ color: '#60a5fa', fontWeight: 'bold', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Affairs & Fallbacks</p>
+            <h1 style={{ margin: '4px 0', fontSize: '1.8rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {activeTab === 'subject' && selectedSubject !== 'All PWOnlyIAS Subjects'
                 ? `Current Affairs — ${selectedSubject}`
                 : 'Current Affairs'}
+              {articles.some(a => a.id.startsWith('dmy-')) && (
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', background: '#f59e0b', color: '#1e293b', padding: '2px 8px', borderRadius: '9999px', textTransform: 'uppercase' }}>Report Demo Mode</span>
+              )}
             </h1>
-            <small style={{ color: '#94a3b8' }}>Verified static & daily UPSC Current Affairs exclusively from official PWOnlyIAS sources.</small>
+            <small style={{ color: '#94a3b8' }}>Verified static & daily UPSC Current Affairs from official PWOnlyIAS and verified fallback sources.</small>
           </div>
           <button
             style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#f8fafc', cursor: 'pointer', fontSize: '0.85rem' }}
@@ -303,37 +319,34 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
       </section>
 
       {/* Main Tab Views */}
+      {error && (
+        <div style={{ padding: '16px', background: '#2d1a1a', border: '1px solid #7f1d1d', color: '#fca5a5', borderRadius: '8px', marginBottom: '16px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>⚠️ {error}</span>
+          <button onClick={() => void refresh()} style={{ background: '#7f1d1d', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>Retry</button>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>Loading PWOnlyIAS Current Affairs...</div>
-      ) : error ? (
-        <div style={{ padding: '24px', background: '#451a1a', border: '1px solid #7f1d1d', color: '#fca5a5', borderRadius: '8px' }}>{error}</div>
-      ) : activeTab === 'qa' ? (
-        /* Q&A Tab View */
-        <section>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '16px', color: '#f8fafc' }}>PWOnlyIAS Grounded Practice Questions & Q&A</h2>
-          <div style={{ padding: '48px 24px', background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', textAlign: 'center', maxWidth: '650px', margin: '20px auto' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '16px' }}>❓</div>
-            <h3 style={{ fontSize: '1.2rem', color: '#f8fafc', marginBottom: '8px' }}>No verified PWOnlyIAS Current Affairs Q&A is available yet.</h3>
-            <p style={{ fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.6' }}>
-              Grounded practice questions will be generated after official PWOnlyIAS Current Affairs articles are verified and indexed.
-            </p>
-          </div>
-        </section>
       ) : filteredArticles.length === 0 ? (
         /* Honest Tab-Specific Empty States */
         <section className="premium-card" style={{ padding: '48px 24px', background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', textAlign: 'center', maxWidth: '650px', margin: '30px auto' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📰</div>
+          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>
+            {activeTab === 'qa' ? '❓' : '📰'}
+          </div>
           <h2 style={{ fontSize: '1.3rem', color: '#f8fafc', marginBottom: '8px' }}>
             {activeTab === 'day' && 'No verified Current Affairs available'}
-            {activeTab === 'weekly' && 'No verified PWOnlyIAS weekly compilation has been imported yet.'}
-            {activeTab === 'monthly' && 'No verified PWOnlyIAS monthly magazine has been imported yet.'}
+            {activeTab === 'weekly' && 'No verified weekly compilation has been imported yet.'}
+            {activeTab === 'monthly' && 'No verified monthly magazine has been imported yet.'}
             {activeTab === 'subject' && 'No verified Current Affairs available yet'}
+            {activeTab === 'qa' && 'No verified Current Affairs Q&A is available yet.'}
           </h2>
           <p style={{ fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.6', marginBottom: '16px' }}>
-            {activeTab === 'day' && 'No verified PWOnlyIAS Current Affairs records are available for this date yet.'}
-            {activeTab === 'weekly' && 'Weekly compilations will appear here after official PWOnlyIAS weekly issues are imported.'}
-            {activeTab === 'monthly' && 'Monthly Manthan magazines will appear here after official PWOnlyIAS monthly issues are imported.'}
-            {activeTab === 'subject' && `No publicly accessible PWOnlyIAS Current Affairs records have been imported for ${selectedSubject} yet.`}
+            {activeTab === 'day' && 'No verified Current Affairs records are available for this date yet.'}
+            {activeTab === 'weekly' && 'Weekly compilations will appear here after official weekly issues are imported.'}
+            {activeTab === 'monthly' && 'Monthly Manthan magazines will appear here after official monthly issues are imported.'}
+            {activeTab === 'subject' && `No publicly accessible Current Affairs records have been imported for ${selectedSubject} yet.`}
+            {activeTab === 'qa' && 'Grounded practice questions will appear here after official Current Affairs Q&A articles are verified.'}
           </p>
         </section>
       ) : (
@@ -346,7 +359,15 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
                 <article key={article.id} style={{ padding: '16px', background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#60a5fa' }}>{article.subject}</span>
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{article.publication_date}</span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {article.id.startsWith('dmy-') && (
+                        <span style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#374151', color: '#fbbf24', borderRadius: '4px', fontWeight: 'bold' }}>Demo Data</span>
+                      )}
+                      {article.publisher && article.publisher !== 'PWOnlyIAS' && (
+                        <span style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#1e3a8a', color: '#93c5fd', borderRadius: '4px' }}>Source: {article.publisher}</span>
+                      )}
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{article.publication_date}</span>
+                    </div>
                   </div>
 
                   <h3 style={{ margin: '4px 0 8px 0', fontSize: '1.05rem', color: '#f8fafc' }}>{article.title}</h3>
@@ -390,7 +411,7 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
               <div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#60a5fa' }}>Source: PWOnlyIAS</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#60a5fa' }}>Source: {readerArticle.publisher || 'PWOnlyIAS'}</span>
                   <span style={{ fontSize: '0.75rem', background: '#1e3a8a', color: '#93c5fd', padding: '2px 8px', borderRadius: '4px' }}>{readerArticle.subject}</span>
                 </div>
                 <h2 style={{ margin: '4px 0 0 0', fontSize: '1.4rem', color: '#f8fafc' }}>{readerArticle.title}</h2>

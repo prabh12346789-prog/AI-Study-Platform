@@ -38,7 +38,21 @@ class Settings(BaseSettings):
     CA_DAILY_LANGUAGE: str = "english"
     CA_DAILY_TIME: str = "07:00"
     CURRENT_AFFAIRS_CONTENT_MODE: str = "private_local"
-    REPORT_DEMO_MODE: bool = True
+    CURRENT_AFFAIRS_AUTO_INGEST: bool = False
+    CURRENT_AFFAIRS_INTERVAL_HOURS: int = 6
+    CURRENT_AFFAIRS_STARTUP_MAX_AGE_HOURS: int = 12
+    CURRENT_AFFAIRS_TIMEZONE: str = "Asia/Kolkata"
+    CURRENT_AFFAIRS_REQUEST_TIMEOUT_SECONDS: float = 15.0
+    CURRENT_AFFAIRS_MAX_RESPONSE_BYTES: int = 5242880
+    PIB_RSS_URL: str = "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1"
+    RBI_RSS_URL: str = "https://rbi.org.in/Scripts/rss.aspx"
+    MEA_RSS_URL: str = "https://www.mea.gov.in/rss-feeds.htm"
+    MEA_PRESS_RELEASES_URL: str = "https://www.mea.gov.in/press-releases"
+    CURRENT_AFFAIRS_ALLOWED_DOMAINS: list[str] = [
+        "pib.gov.in", "www.pib.gov.in",
+        "rbi.org.in", "www.rbi.org.in",
+        "mea.gov.in", "www.mea.gov.in"
+    ]
 
     @field_validator("DEBUG", mode="before")
     @classmethod

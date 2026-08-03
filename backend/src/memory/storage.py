@@ -76,6 +76,14 @@ def get_engine(db_path: str | None = None):
             ("content_checksum", "TEXT"),
             ("extracted_text", "TEXT"),
             ("indexed_at", "DATETIME"),
+            ("summary_method", "TEXT DEFAULT 'extractive'"),
+            ("summary_model", "TEXT DEFAULT 'extractive_fallback'"),
+            ("summary_generated_at", "DATETIME"),
+            ("gs_paper", "TEXT"),
+            ("relevance_reason", "TEXT"),
+            ("classification_method", "TEXT DEFAULT 'deterministic_keywords'"),
+            ("is_demo", "BOOLEAN DEFAULT 0"),
+            ("rejection_reason", "TEXT"),
         ]
         for col_name, col_type in new_cols:
             if col_name not in existing_cols:

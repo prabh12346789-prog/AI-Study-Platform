@@ -122,7 +122,7 @@ export interface ContentBlock {
 export interface CurrentAffairsArticle {
   id: string; title: string; summary: string; source_title: string; publisher: string; source_url: string; source_type: string
   publication_date: string | null; retrieved_at: string; subject: string; topic: string; syllabus_tags_json: string[]
-  importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string
+  importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string; is_demo: boolean
   saved: boolean; opened: boolean
   slug?: string | null; cadence?: 'daily' | 'weekly' | 'monthly' | 'special' | null
   content_type?: 'article' | 'compilation' | 'editorial' | 'prelims_qa' | 'mains_qa' | null
@@ -430,6 +430,24 @@ export const getCurrentAffairsQuizzes = () => currentAffairsRequest<CurrentAffai
 export const getCurrentAffairsQuizAttempts = (id: string) => currentAffairsRequest<CurrentAffairsQuizResult[]>(`/quizzes/${id}/attempts`)
 export const submitCurrentAffairsQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => currentAffairsRequest<CurrentAffairsQuizResult>(`/quizzes/${id}/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
 export const getCurrentAffairsRetentionOverview = () => currentAffairsRequest<CurrentAffairsRetentionOverview>('/retention/overview')
+export interface CurrentAffairsDatesResponse {
+  available_dates: string[]
+  latest_available_date: string
+  earliest_available_date: string
+  today_record_count: number
+  total_active_records: number
+}
+export interface CurrentAffairsSyncStatusResponse {
+  last_synchronized_at: string | null
+  sources_checked: string[]
+  successful_sources: string[]
+  unavailable_sources: string[]
+  accepted_article_count: number
+  last_run_status: string
+}
+export const getCurrentAffairsDates = () => currentAffairsRequest<CurrentAffairsDatesResponse>('/dates')
+export const getCurrentAffairsSyncStatus = () => currentAffairsRequest<CurrentAffairsSyncStatusResponse>('/status')
+export const refreshCurrentAffairs = () => currentAffairsRequest<{ run_id: string; status: string; accepted: number; fetched: number }>('/refresh', { method: 'POST' })
 export const markCurrentAffairsRevised = (id: string) => currentAffairsRequest<CurrentAffairsRetention>(`/retention/${id}/revise`, { method: 'POST' })
 
 // UPSC Books API

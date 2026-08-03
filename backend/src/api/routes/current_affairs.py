@@ -9,14 +9,37 @@ from src.current_affairs.personalization import PersonalizedCurrentAffairsServic
 from src.schemas.current_affairs import ArticleResponse, CollectRequest, CollectResponse, DailyBriefResponse, DailyGenerateRequest
 from src.schemas.current_affairs_quiz import QuizCreate, QuizSubmission
 
+from src.current_affairs.ingestion_service import OfficialCurrentAffairsIngestionService
+
 router = APIRouter()
 
 
 def service(): return CurrentAffairsService()
 def quiz_service(): return CurrentAffairsQuizService()
+def official_ingestion_service(): return OfficialCurrentAffairsIngestionService()
 def require_admin(x_internal_key: str | None = Header(default=None, alias="X-Internal-Key", description="Configured INTERNAL_ADMIN_KEY; never expose this in the student frontend.")):
     if not settings.INTERNAL_ADMIN_KEY: raise HTTPException(status_code=503, detail="Internal collection key is not configured")
     if x_internal_key != settings.INTERNAL_ADMIN_KEY: raise HTTPException(status_code=403, detail="Internal access required")
+
+
+@router.post("/refresh")
+async def refresh_current_affairs():
+    svc = official_ingestion_service()
+    res = await svc.run_ingestion(trigger_type="manual")
+    if res.get("status") == "already_running":
+        raise HTTPException(status_code=409, detail="Current Affairs ingestion is already running")
+    return res
+
+
+@router.get("/dates")
+def current_affairs_dates():
+    return official_ingestion_service().get_dates_metadata()
+
+
+@router.get("/status")
+def current_affairs_status():
+    return official_ingestion_service().get_sync_status()
+
 
 
 def article_response(row, saved=False, opened=False):
@@ -139,6 +162,10 @@ def saved(): return [article_response(*item) for item in service().list_articles
 
 @router.get("/summary")
 def summary(): return service().dashboard_summary()
+
+@router.get("/qa")
+def qa(subject: str | None = None, limit: int = Query(default=20, ge=1, le=100)):
+    return service().qa_items(subject=subject, limit=limit)
 
 
 @router.get("/personalized")

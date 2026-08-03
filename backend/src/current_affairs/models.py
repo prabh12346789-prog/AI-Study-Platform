@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Float, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -39,8 +39,35 @@ class CurrentAffairsArticle(Base):
     content_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary_method: Mapped[str | None] = mapped_column(String(32), default="extractive", nullable=True)
+    summary_model: Mapped[str | None] = mapped_column(String(64), default="extractive_fallback", nullable=True)
+    summary_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    gs_paper: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    relevance_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    classification_method: Mapped[str | None] = mapped_column(String(32), default="deterministic_keywords", nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CurrentAffairsIngestionRun(Base):
+    __tablename__ = "current_affairs_ingestion_runs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    source_results: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    fetched_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    accepted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rejected_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    summarized_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    indexed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 
 class DailyCurrentAffairsBrief(Base):

@@ -7,12 +7,11 @@ from sqlalchemy import select
 from src.activity.manager import ActivityManager
 from src.current_affairs.models import (CurrentAffairsArticle, CurrentAffairsQuiz, CurrentAffairsQuizAttempt,
     CurrentAffairsQuizQuestion, CurrentAffairsRetention, SavedCurrentAffairs)
+from src.current_affairs.eligibility import is_quiz_ready_article
 from src.mastery.manager import MasteryManager
 from src.memory.storage import get_session_factory
 
 class CurrentAffairsQuizService:
-    _demo_quizzes = {}
-
     def __init__(self, db_path=None, activity=None, mastery=None):
         self.sessions = get_session_factory(db_path); self.activity = activity or ActivityManager(db_path)
         self.mastery = mastery or MasteryManager(db_path)
@@ -22,10 +21,11 @@ class CurrentAffairsQuizService:
 
     def _articles(self, start, end):
         with self.sessions() as session:
-            return list(session.scalars(select(CurrentAffairsArticle).where(CurrentAffairsArticle.status == "active",
-                CurrentAffairsArticle.extraction_status.notin_(["image_only", "unavailable", "failed"]),
+            rows = list(session.scalars(select(CurrentAffairsArticle).where(
                 CurrentAffairsArticle.publication_date >= start, CurrentAffairsArticle.publication_date <= end)
-                .order_by(CurrentAffairsArticle.importance_level.desc(), CurrentAffairsArticle.publication_date.desc())))
+                .order_by(CurrentAffairsArticle.indexed_at.desc().nullslast(),
+                    CurrentAffairsArticle.publication_date.desc(), CurrentAffairsArticle.subject)))
+        return [article for article in rows if is_quiz_ready_article(article)]
 
     @staticmethod
     def _facts(article):
@@ -34,51 +34,13 @@ class CurrentAffairsQuizService:
         return list(dict.fromkeys([core, *facts, article.relevance_mains.strip()]))
 
     def generate(self, payload, user_id="user_001"):
-        from src.core.config import settings
-        is_demo = getattr(settings, "REPORT_DEMO_MODE", False)
         today = date.today(); end = payload.date_to or today
         start = payload.date_from or (end - timedelta(days=6) if payload.period_type == "weekly" else end)
         if start > end: raise ValueError("date_from must not be after date_to")
         count = payload.question_count or (10 if payload.period_type == "weekly" else 5)
-        articles = self._articles(start, end); pool = [(article, fact) for article in articles for fact in self._facts(article) if fact]
+        articles = self._articles(start, end)
         
-        if is_demo and (not pool or len(pool) < count):
-            # Create in-memory demo quiz
-            quiz = CurrentAffairsQuiz(
-                id=f"demo-ca-quiz-{uuid.uuid4().hex[:8]}",
-                user_id=user_id,
-                title=f"[Demo Data] {payload.period_type.title()} Current Affairs Quiz",
-                period_type=payload.period_type,
-                date_from=start,
-                date_to=end,
-                question_count=count,
-                difficulty=payload.difficulty,
-                status="ready",
-                article_ids_json=["dmy-art-001"],
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc)
-            )
-            mock_questions = []
-            for i in range(count):
-                q = CurrentAffairsQuizQuestion(
-                    id=f"demo-ca-q-{i}",
-                    quiz_id=quiz.id,
-                    question_type="mcq",
-                    question=f"[Demo Data] Regarding the recent India-France Bilateral Trade Agreement (2026), what is the target year to double the trade volume?",
-                    options_json=["A) 2030", "B) 2028", "C) 2035", "D) 2040"],
-                    correct_answer="A) 2030",
-                    explanation="[Demo Data] The agreement aims to double the bilateral trade volume between India and France by 2030.",
-                    article_id="dmy-art-001",
-                    source_url="https://pib.gov.in/dummy-1",
-                    subject="International Relations",
-                    topic="Bilateral Relations",
-                    difficulty=payload.difficulty
-                )
-                mock_questions.append(q)
-            self._demo_quizzes[quiz.id] = (quiz, mock_questions)
-            return quiz
-
-        if len(pool) < count: raise ValueError("Insufficient accepted Current Affairs content for the requested quiz")
+        if len(articles) < 4: raise ValueError("Insufficient eligible official Current Affairs content for a four-option quiz")
         questions, seen = [], set(); types = ["mcq", "true_false", "statement_based", "short_recall"]
         titles = [article.title for article in articles]
         for article, fact in pool:
@@ -108,14 +70,10 @@ class CurrentAffairsQuizService:
         return quiz
 
     def get(self, quiz_id, user_id="user_001"):
-        if quiz_id.startswith("demo-"):
-            return self._demo_quizzes.get(quiz_id)[0] if quiz_id in self._demo_quizzes else None
         with self.sessions() as session:
             return session.scalar(select(CurrentAffairsQuiz).where(CurrentAffairsQuiz.id == quiz_id, CurrentAffairsQuiz.user_id == user_id))
 
     def questions(self, quiz_id):
-        if quiz_id.startswith("demo-"):
-            return self._demo_quizzes.get(quiz_id)[1] if quiz_id in self._demo_quizzes else []
         with self.sessions() as session: return list(session.scalars(select(CurrentAffairsQuizQuestion).where(CurrentAffairsQuizQuestion.quiz_id == quiz_id)))
 
     def list(self, user_id="user_001"):

@@ -1,6 +1,6 @@
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from sqlalchemy import select, func, or_
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,9 @@ from src.rag.vector_store import VectorStore
 from src.rag.embeddings import EmbeddingService
 from src.upsc_books.models import UPSCBook
 from src.current_affairs.models import CurrentAffairsArticle, CurrentAffairsQuiz, CurrentAffairsQuizAttempt, CurrentAffairsQuizQuestion
+from src.current_affairs.eligibility import is_quiz_ready_article
+from src.current_affairs.quiz_service import CurrentAffairsQuizService
+from src.schemas.current_affairs_quiz import QuizCreate, QuizAnswer
 from src.tests_engine.models import MainsTestSession, MainsQuestion, MainsAnswerAttempt
 
 log = logging.getLogger(__name__)
@@ -60,27 +63,15 @@ class UnifiedTestsService:
         self.llm = llm or get_llm()
 
     def get_sources_availability(self):
-        from src.core.config import settings
         with self.sessions() as session:
             all_books = session.scalars(select(UPSCBook)).all()
             eligible_books = [b for b in all_books if is_eligible_book(b)]
             prelims_books = [b for b in eligible_books if b.prelims_relevant]
             mains_books = [b for b in eligible_books if b.mains_relevant]
 
-            ca_articles = session.scalars(
-                select(CurrentAffairsArticle).where(
-                    CurrentAffairsArticle.status == "active",
-                    CurrentAffairsArticle.publisher == "PWOnlyIAS",
-                    CurrentAffairsArticle.extraction_status == "completed",
-                    ~CurrentAffairsArticle.title.ilike("%Pending Backfill%"),
-                    ~CurrentAffairsArticle.title.ilike("%Image Only PDF%"),
-                    ~CurrentAffairsArticle.title.ilike("%Mode Test%"),
-                    ~CurrentAffairsArticle.title.ilike("%Internal Reader Test%"),
-                    ~CurrentAffairsArticle.id.like("test-%")
-                )
-            ).all()
+            ca_articles = [article for article in session.scalars(select(CurrentAffairsArticle)).all()
+                if is_quiz_ready_article(article)]
 
-        is_demo = getattr(settings, "REPORT_DEMO_MODE", False)
         return {
             "notes": {
                 "available": False,
@@ -94,22 +85,47 @@ class UnifiedTestsService:
                 "message": "No verified and indexed UPSC Books are available yet." if len(mains_books) == 0 else ""
             },
             "prelims_books": {
-                "available": len(prelims_books) > 0 or is_demo,
+                "available": len(prelims_books) > 0,
                 "count": len(prelims_books),
-                "subjects": sorted(list({b.normalized_subject for b in prelims_books if b.normalized_subject})) if prelims_books else ["History", "Polity", "Economy", "Environment", "Ethics"],
-                "message": "No verified and indexed UPSC Books are available yet." if len(prelims_books) == 0 else "",
-                "demo_mode": is_demo
+                "subjects": sorted(list({b.normalized_subject for b in prelims_books if b.normalized_subject})),
+                "message": "No verified and indexed UPSC Books are available yet." if len(prelims_books) == 0 else ""
             },
             "current_affairs": {
-                "available": len(ca_articles) > 0 or is_demo,
-                "count": len(ca_articles) + (10 if is_demo else 0),
-                "demo_mode": is_demo
-            },
-            "demo_mode": is_demo
+                "available": len(ca_articles) > 0,
+                "count": len(ca_articles)
+            }
         }
 
     def generate_prelims_quiz(self, payload: PrelimsQuizCreate, user_id="user_001"):
         # 1. Validate selected source and filters.
+        if payload.source_type == "current_affairs":
+            service = CurrentAffairsQuizService(activity=self.activity, mastery=self.mastery)
+            quiz = service.generate(QuizCreate(period_type="custom", date_from=date.min,
+                date_to=date.today(), question_count=payload.question_count), user_id=user_id)
+            questions = service.questions(quiz.id)
+            with self.sessions() as session:
+                articles = {article.id: article for article in session.scalars(select(CurrentAffairsArticle)
+                    .where(CurrentAffairsArticle.id.in_([question.article_id for question in questions]))).all()}
+            return {
+                "quiz_id": quiz.id,
+                "questions": [{
+                    "id": question.id,
+                    "question": question.question,
+                    "options": question.options_json,
+                    "correct_answer": question.correct_answer,
+                    "explanation": question.explanation,
+                    "subject": question.subject,
+                    "topic": question.topic,
+                    "source_id": question.article_id,
+                    "source_type": "current_affairs",
+                    "source_title": articles[question.article_id].title,
+                    "source_name": articles[question.article_id].publisher,
+                    "source_url": question.source_url,
+                    "publication_date": articles[question.article_id].publication_date.isoformat(),
+                    "disclaimer": "AI-generated Current Affairs practice question based on cited official sources.",
+                } for question in questions],
+                "generated_at": quiz.created_at.isoformat(),
+            }
         if payload.source_type != "books":
             raise ValueError("Unsupported source type for Prelims Quiz.")
 
@@ -122,11 +138,6 @@ class UnifiedTestsService:
                 query = query.where(UPSCBook.id == payload.book_id)
             books = [b for b in session.scalars(query).all() if is_eligible_book(b)]
 
-        books = [b for b in session.scalars(query).all() if is_eligible_book(b)]
-
-        from src.core.config import settings
-        is_demo = getattr(settings, "REPORT_DEMO_MODE", False)
-
         # Check chunks
         chunks = []
         for book in books:
@@ -136,33 +147,6 @@ class UnifiedTestsService:
                     txt = b["text"].strip()
                     if len(txt) >= 100:
                         chunks.append((book, txt, b.get("page_start", 1)))
-
-        if is_demo and (not books or len(chunks) < payload.question_count):
-            quiz_id = f"demo_prelims_quiz_{uuid.uuid4().hex[:8]}"
-            questions = [
-                {
-                    "id": f"demo_prelims_q_{i}",
-                    "question": f"[Demo Data] Which of the following constitutional provisions outlines the basic structure doctrine of the Indian Constitution?",
-                    "options": [
-                        "A) Article 368 allows amending any part, subject to basic structure limitations.",
-                        "B) Article 13 prevents all constitutional amendments.",
-                        "C) Article 21 guarantees absolute fundamental rights without limitations.",
-                        "D) The basic structure doctrine is explicitly defined in Article 368."
-                    ],
-                    "correct_answer": "A) Article 368 allows amending any part, subject to basic structure limitations.",
-                    "explanation": "[Demo Data] The basic structure doctrine was established by the Supreme Court in the Kesavananda Bharati case (1973), limiting Parliament's amending power under Article 368.",
-                    "subject": payload.subject or "Polity",
-                    "topic": "Constitutional Amendments",
-                    "source_id": "demo-book-1",
-                    "source_type": "upsc_book",
-                    "source_title": "Demo UPSC Indian Polity Book"
-                } for i in range(payload.question_count)
-            ]
-            return {
-                "quiz_id": quiz_id,
-                "questions": questions,
-                "generated_at": datetime.now(timezone.utc).isoformat()
-            }
 
         if not books or len(chunks) < payload.question_count:
             raise ValueError("Not enough indexed UPSC Books are available to create a grounded quiz.")
@@ -219,6 +203,12 @@ class UnifiedTestsService:
         return session_data
 
     def submit_prelims_quiz(self, quiz_id: str, questions: list[dict], answers: dict[str, str], user_id="user_001"):
+        if quiz_id.startswith("ca_"):
+            result = CurrentAffairsQuizService(activity=self.activity, mastery=self.mastery).submit(
+                quiz_id, [QuizAnswer(question_id=key, answer=value) for key, value in answers.items()], user_id)
+            return {"quiz_id": quiz_id, "score": result["score"], "total": result["total"],
+                "percentage": result["percentage"], "results": result["results"],
+                "breakdown": result["results"], "completed_at": result["completed_at"]}
         results = []
         correct_count = 0
         now = datetime.now(timezone.utc)

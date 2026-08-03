@@ -1,4 +1,5 @@
 import os
+import sys
 import pytest
 import uuid
 from fastapi.testclient import TestClient
@@ -118,7 +119,7 @@ def test_book_manual_import_and_streaming(tmp_path):
 
     # 2. Test dry-run book import
     cmd_dry = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book",
         "--title", "Polity Dry Run Book",
         "--subject", "Indian Polity and Governance",
@@ -136,7 +137,7 @@ def test_book_manual_import_and_streaming(tmp_path):
 
     # 3. Test real import book
     cmd_real = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book",
         "--title", "Polity Real Book",
         "--subject", "Indian Polity and Governance",
@@ -231,7 +232,7 @@ def test_book_batch_import(tmp_path):
 
     # 3. Test dry-run makes no changes
     cmd_dry = [
-        "python", "-m", "src.scripts.batch_import_pwonlyias_pdfs",
+        sys.executable, "-m", "src.scripts.batch_import_pwonlyias_pdfs",
         "--folder", str(folder),
         "--metadata", str(csv_file),
         "--dry-run"
@@ -249,7 +250,7 @@ def test_book_batch_import(tmp_path):
 
     # 4. Actual batch import run
     cmd_real = [
-        "python", "-m", "src.scripts.batch_import_pwonlyias_pdfs",
+        sys.executable, "-m", "src.scripts.batch_import_pwonlyias_pdfs",
         "--folder", str(folder),
         "--metadata", str(csv_file)
     ]
@@ -309,7 +310,7 @@ def test_book_three_sections_classification_and_cli(tmp_path):
 
     # 1. Test single import --prelims
     cmd1 = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book", "--title", "Prelims Only Book",
         "--subject", "Indian Polity and Governance", "--collection", "UDAAN",
         "--source-url", "https://pwonlyias.com/prelims-test-url",
@@ -322,7 +323,7 @@ def test_book_three_sections_classification_and_cli(tmp_path):
 
     # 2. Test single import --mains
     cmd2 = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book", "--title", "Mains Only Book",
         "--subject", "Indian Polity and Governance", "--collection", "UDAAN",
         "--source-url", "https://pwonlyias.com/mains-test-url",
@@ -333,7 +334,7 @@ def test_book_three_sections_classification_and_cli(tmp_path):
 
     # 3. Test single import both
     cmd3 = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book", "--title", "Both Relevant Book",
         "--subject", "Indian Polity and Governance", "--collection", "UDAAN",
         "--source-url", "https://pwonlyias.com/both-test-url",
@@ -344,7 +345,7 @@ def test_book_three_sections_classification_and_cli(tmp_path):
 
     # 4. Test single import --qa-bank
     cmd4 = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book", "--title", "QA Practice Bank",
         "--subject", "Indian Polity and Governance", "--collection", "UDAAN",
         "--source-url", "https://pwonlyias.com/qa-test-url",
@@ -355,7 +356,7 @@ def test_book_three_sections_classification_and_cli(tmp_path):
 
     # 5. Test ambiguous combination rejected
     cmd_evil = [
-        "python", "-m", "src.scripts.import_pwonlyias_pdf",
+        sys.executable, "-m", "src.scripts.import_pwonlyias_pdf",
         "--type", "book", "--title", "Evil Book",
         "--subject", "Geography", "--collection", "UDAAN",
         "--source-url", "https://pwonlyias.com/evil-test-url",
@@ -465,7 +466,7 @@ def test_detailed_duplicate_matching_and_classification(tmp_path):
 
     # Run batch importer CLI on the 15 files
     cmd = [
-        "python", "-m", "src.scripts.batch_import_pwonlyias_pdfs",
+        sys.executable, "-m", "src.scripts.batch_import_pwonlyias_pdfs",
         "--folder", str(folder),
         "--metadata", str(csv_file)
     ]
@@ -528,7 +529,7 @@ def test_detailed_duplicate_matching_and_classification(tmp_path):
         writer.writerow([filenames[0], "Prahaar Book 1 Updated", "History", "Prahaar 2026", "https://pwonlyias.com/prahaar-for-mains-current-affairs/", "true", "true"])
 
     cmd_force = [
-        "python", "-m", "src.scripts.batch_import_pwonlyias_pdfs",
+        sys.executable, "-m", "src.scripts.batch_import_pwonlyias_pdfs",
         "--folder", str(folder),
         "--metadata", str(csv_file),
         "--force-reindex"

@@ -17,10 +17,17 @@ from src.api.router import api_router
 log.info("Model imports and router registration finished")
 
 
+from src.current_affairs.scheduler import start_scheduler, stop_scheduler
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     log.info("Application ready in %.2f seconds", time.perf_counter() - STARTED_AT)
-    yield
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
 
 
 app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION, lifespan=lifespan)

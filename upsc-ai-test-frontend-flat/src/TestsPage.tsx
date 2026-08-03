@@ -495,7 +495,7 @@ export function TestsPage() {
       <div className="tests-config-card">
         <h2 className="tests-section-title">Current Affairs Quiz</h2>
         <p className="tests-description">
-          Test your knowledge of recent Current Affairs. Questions are grounded in indexed PWOnlyIAS Current Affairs articles only.
+          Questions are generated from accepted official Current Affairs sources stored in your study platform.
         </p>
         {sources && renderSourceBadge(sources)}
 
@@ -517,7 +517,7 @@ export function TestsPage() {
         </button>
 
         {sources && !sources.current_affairs.available && (
-          <p className="tests-unavail">No eligible Current Affairs articles are indexed yet. Sync Current Affairs to unlock this quiz.</p>
+          <p className="tests-unavail">No eligible official Current Affairs articles are available for quiz generation.</p>
         )}
       </div>
     )
@@ -802,9 +802,6 @@ export function TestsPage() {
           <p className="eyebrow">Exam Practice</p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <h1>Tests</h1>
-            {sources?.demo_mode && (
-              <span className="demo-badge" style={{ fontSize: '0.75rem', fontWeight: 'bold', background: '#f59e0b', color: '#1e293b', padding: '2px 8px', borderRadius: '9999px', textTransform: 'uppercase' }}>Report Demo Mode</span>
-            )}
           </div>
           <small>Prelims MCQs, Current Affairs Quiz, and Mains Answer Writing — all grounded in official PWOnlyIAS content.</small>
         </div>

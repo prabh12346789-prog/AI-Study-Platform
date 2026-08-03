@@ -129,9 +129,6 @@ export function MentorDashboard({ trackingActive, onNavigate }: { trackingActive
         <div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <p className="eyebrow">Mentor wireframe</p>
-            {data.demo_mode && (
-              <span className="demo-badge" style={{ fontSize: '0.75rem', fontWeight: 'bold', background: '#f59e0b', color: '#1e293b', padding: '2px 8px', borderRadius: '9999px', textTransform: 'uppercase' }}>Report Demo Mode</span>
-            )}
           </div>
           <h1>{formatGreeting()}</h1>
           <p>{data.mentor_brief.summary}</p>

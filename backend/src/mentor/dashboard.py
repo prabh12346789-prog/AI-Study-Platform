@@ -16,77 +16,7 @@ class MentorDashboardService:
         }
 
     def get_dashboard(self, user_id: str = "user_001") -> dict:
-        from src.core.config import settings
         from datetime import date
-        if getattr(settings, "REPORT_DEMO_MODE", False):
-            return {
-                "demo_mode": True,
-                "today": {
-                    "study_seconds": 6000,
-                    "questions_asked": 4,
-                    "subjects_studied": 3,
-                    "top_subject": "Polity",
-                    "top_topic": "Constitutional Amendments",
-                    "subject_breakdown": [
-                        {"name": "Polity", "study_seconds": 3600, "event_count": 2},
-                        {"name": "Economy", "study_seconds": 1800, "event_count": 1},
-                        {"name": "History", "study_seconds": 600, "event_count": 1}
-                    ]
-                },
-                "mentor_brief": {
-                    "summary": "[Report Demo Mode] You studied Polity most today. Constitutional Amendments is currently a key focus. Ethics requires attention due to upcoming revision timelines.",
-                    "strengths": [
-                        {"id": "demo-mast-1", "subject": "Polity", "topic": "Constitutional Amendments", "mastery_score": 0.78, "forgetting_risk": 15, "risk_level": "low", "explanation": ["Strong performance on practice quizzes.", "Regular revisions completed."], "last_revised_at": "2026-07-23T10:00:00Z", "next_revision_at": "2026-07-30T10:00:00Z", "updated_at": "2026-07-24T00:00:00Z"}
-                    ],
-                    "weaknesses": [
-                        {"id": "demo-mast-2", "subject": "Ethics", "topic": "Attitude & Moral Influence", "mastery_score": 0.52, "forgetting_risk": 65, "risk_level": "medium", "explanation": ["Lower scores on recent practice sessions.", "Needs conceptual reinforcement."], "last_revised_at": "2026-07-20T10:00:00Z", "next_revision_at": "2026-07-25T10:00:00Z", "updated_at": "2026-07-24T00:00:00Z"}
-                    ],
-                    "likely_to_forget": [
-                        {"id": "demo-mast-3", "subject": "Environment", "topic": "Climate Change & COP", "mastery_score": 0.60, "forgetting_risk": 82, "risk_level": "high", "explanation": ["High risk of memory decay. Not revised in 5 days."], "last_revised_at": "2026-07-19T10:00:00Z", "next_revision_at": "2026-07-24T10:00:00Z", "updated_at": "2026-07-24T00:00:00Z"}
-                    ],
-                    "next_best_action": {
-                        "id": "demo-act-1", "subject": "Environment", "topic": "Climate Change & COP", "action_type": "revision", "title": "Revise Climate Change COP targets", "reason": ["High forgetting risk detected.", "Syllabus high-yield topic."], "priority_score": 85, "priority_level": "high", "estimated_minutes": 20, "status": "active", "source_mastery_id": "demo-mast-3"
-                    }
-                },
-                "mastery": {
-                    "average_mastery": 0.68,
-                    "strong_topics": [
-                        {"id": "demo-mast-1", "subject": "Polity", "topic": "Constitutional Amendments", "mastery_score": 0.78, "forgetting_risk": 15, "risk_level": "low", "explanation": ["Strong performance on practice quizzes."], "last_revised_at": "2026-07-23T10:00:00Z", "next_revision_at": "2026-07-30T10:00:00Z", "updated_at": "2026-07-24T00:00:00Z"}
-                    ],
-                    "weak_topics": [
-                        {"id": "demo-mast-2", "subject": "Ethics", "topic": "Attitude & Moral Influence", "mastery_score": 0.52, "forgetting_risk": 65, "risk_level": "medium", "explanation": ["Lower scores on recent practice sessions."], "last_revised_at": "2026-07-20T10:00:00Z", "next_revision_at": "2026-07-25T10:00:00Z", "updated_at": "2026-07-24T00:00:00Z"}
-                    ],
-                    "high_risk_topics": [
-                        {"id": "demo-mast-3", "subject": "Environment", "topic": "Climate Change & COP", "mastery_score": 0.60, "forgetting_risk": 82, "risk_level": "high", "explanation": ["High risk of memory decay."], "last_revised_at": "2026-07-19T10:00:00Z", "next_revision_at": "2026-07-24T10:00:00Z", "updated_at": "2026-07-24T00:00:00Z"}
-                    ],
-                    "subject_breakdown": [
-                        {"subject": "Polity", "mastery_score": 0.78},
-                        {"subject": "Economy", "mastery_score": 0.70},
-                        {"subject": "History", "mastery_score": 0.65},
-                        {"subject": "Environment", "mastery_score": 0.60},
-                        {"subject": "Ethics", "mastery_score": 0.52}
-                    ]
-                },
-                "recommendations": {
-                    "primary": {
-                        "id": "demo-act-1", "subject": "Environment", "topic": "Climate Change & COP", "action_type": "revision", "title": "Revise Climate Change COP targets", "reason": ["High forgetting risk detected.", "Syllabus high-yield topic."], "priority_score": 85, "priority_level": "high", "estimated_minutes": 20, "status": "active", "source_mastery_id": "demo-mast-3"
-                    },
-                    "alternatives": [
-                        {"id": "demo-act-2", "subject": "Polity", "topic": "Federal Structure", "action_type": "quiz", "title": "Practice Quiz on Federal Structure", "reason": ["Active recall due."], "priority_score": 70, "priority_level": "medium", "estimated_minutes": 15, "status": "active", "source_mastery_id": "demo-mast-4"}
-                    ]
-                },
-                "recommended_videos": [],
-                "profile": {
-                    "preferred_language": "english",
-                    "preferred_depth": "standard",
-                    "preferred_format": "structured",
-                    "daily_target_minutes": 120
-                },
-                "recent_activity": [
-                    {"id": "demo-act-evt-1", "user_id": "user_001", "event_type": "study_time_logged", "subject": "Polity", "topic": "Constitutional Amendments", "duration_seconds": 3600, "metadata_json": {}, "occurred_at": "2026-07-24T08:00:00Z", "created_at": "2026-07-24T08:00:00Z"},
-                    {"id": "demo-act-evt-2", "user_id": "user_001", "event_type": "quiz_answered", "subject": "History", "topic": "Ancient India", "duration_seconds": 600, "metadata_json": {"score": 4, "total": 5}, "occurred_at": "2026-07-23T15:30:00Z", "created_at": "2026-07-23T15:30:00Z"}
-                ]
-            }
 
         now = datetime.now(timezone.utc)
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)

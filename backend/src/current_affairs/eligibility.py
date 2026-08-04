@@ -11,7 +11,11 @@ def is_quiz_ready_article(article: CurrentAffairsArticle | None) -> bool:
         return False
     if not article.title or not article.publication_date or not article.source_url:
         return False
-    if not article.summary or len(" ".join(article.summary.split())) < 40:
+    # Quiz grounding comes from the accepted article's summary plus its
+    # extracted Prelims/Mains relevance fields.  A fixed summary word count
+    # incorrectly excludes concise official releases even when those grounded
+    # fields are present.
+    if not article.summary or not article.relevance_prelims or not article.relevance_mains:
         return False
     if source_adapter(article.source_url) is None:
         return False

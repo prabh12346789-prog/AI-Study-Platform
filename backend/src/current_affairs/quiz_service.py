@@ -8,6 +8,7 @@ from src.activity.manager import ActivityManager
 from src.current_affairs.models import (CurrentAffairsArticle, CurrentAffairsQuiz, CurrentAffairsQuizAttempt,
     CurrentAffairsQuizQuestion, CurrentAffairsRetention, SavedCurrentAffairs)
 from src.current_affairs.eligibility import is_quiz_ready_article
+from src.current_affairs.sanitizer import is_safe_quiz_text, sanitize_current_affairs_text
 from src.mastery.manager import MasteryManager
 from src.memory.storage import get_session_factory
 
@@ -28,10 +29,27 @@ class CurrentAffairsQuizService:
         return [article for article in rows if is_quiz_ready_article(article)]
 
     @staticmethod
-    def _facts(article):
-        facts = [line.strip(" -•") for line in article.relevance_prelims.splitlines() if len(line.strip()) >= 12]
-        core = re.sub(r"^(What happened:\s*)", "", article.summary.splitlines()[0], flags=re.I).strip()
-        return list(dict.fromkeys([core, *facts, article.relevance_mains.strip()]))
+    def _clean_article(article):
+        title = sanitize_current_affairs_text(article.title, max_length=180)
+        summary = sanitize_current_affairs_text(article.summary, max_length=280)
+        summary = re.sub(r"^What happened:\s*", "", summary, flags=re.I).strip()
+        return (article, title, summary) if title and summary else None
+
+    @staticmethod
+    def question_is_valid(question: CurrentAffairsQuizQuestion) -> bool:
+        options = question.options_json or []
+        return (
+            is_safe_quiz_text(question.question, max_length=500)
+            and is_safe_quiz_text(question.explanation, max_length=700)
+            and len(options) == 4
+            and len({option.casefold().strip() for option in options}) == 4
+            and all(is_safe_quiz_text(option, max_length=180) for option in options)
+            and question.correct_answer in options
+        )
+
+    def quiz_is_valid(self, quiz_id: str) -> bool:
+        questions = self.questions(quiz_id)
+        return bool(questions) and all(self.question_is_valid(question) for question in questions)
 
     def generate(self, payload, user_id="user_001"):
         today = date.today(); end = payload.date_to or today
@@ -40,26 +58,29 @@ class CurrentAffairsQuizService:
         count = payload.question_count or (10 if payload.period_type == "weekly" else 5)
         articles = self._articles(start, end)
         
-        if len(articles) < 4: raise ValueError("Insufficient eligible official Current Affairs content for a four-option quiz")
-        questions, seen = [], set(); types = ["mcq", "true_false", "statement_based", "short_recall"]
-        titles = [article.title for article in articles]
-        for article, fact in pool:
+        clean_articles = [clean for article in articles if (clean := self._clean_article(article))]
+        titles = list(dict.fromkeys(title for _, title, _ in clean_articles))
+        if len(titles) < 4:
+            raise ValueError("Insufficient clean official Current Affairs content for a four-option quiz")
+        questions, seen = [], set()
+        for article, title, summary in clean_articles:
             if len(questions) >= count: break
-            kind = types[len(questions) % len(types)]
-            if kind == "mcq" and len(titles) >= 2:
-                text = f"Which accepted article is associated with this grounded fact: {fact}"
-                options = list(dict.fromkeys([article.title, *[title for title in titles if title != article.title]]))[:4]
-                answer = article.title
-            elif kind == "true_false": text, options, answer = f"True or false: {fact}", ["True", "False"], "True"
-            elif kind == "statement_based": text, options, answer = f"Identify the accepted source statement for {article.topic}.", [fact], fact
-            else: text, options, answer = f"Recall the key accepted fact from “{article.title}”.", [], fact
+            options = [title, *[candidate for candidate in titles if candidate != title][:3]]
+            answer = title
+            text = f'Which official article is described by this summary: "{summary}"?'
             key = self._norm(text)
             if key in seen: continue
-            seen.add(key); questions.append(CurrentAffairsQuizQuestion(id=str(uuid.uuid4()), quiz_id="", question_type=kind,
+            candidate = CurrentAffairsQuizQuestion(id=str(uuid.uuid4()), quiz_id="", question_type="mcq",
                 question=text, options_json=options, correct_answer=answer,
-                explanation=f"AI-generated practice quiz based on the cited PWOnlyIAS source ({article.publisher}): {fact}", article_id=article.id, source_url=article.source_url,
-                subject=article.subject, topic=article.topic, difficulty=payload.difficulty))
-        if len(questions) < count: raise ValueError("Insufficient distinct accepted Current Affairs content for the requested quiz")
+                explanation=f"Grounded in the official {article.publisher} article published on {article.publication_date.isoformat()}: {summary}",
+                article_id=article.id, source_url=article.source_url, subject=article.subject,
+                topic=article.topic, difficulty=payload.difficulty)
+            if not self.question_is_valid(candidate):
+                continue
+            seen.add(key); questions.append(candidate)
+        if not questions:
+            raise ValueError("No clean Current Affairs questions could be generated")
+        count = len(questions)
         quiz = CurrentAffairsQuiz(id=str(uuid.uuid4()), user_id=user_id, title=f"{payload.period_type.title()} Current Affairs Quiz",
             period_type=payload.period_type, date_from=start, date_to=end, question_count=count, difficulty=payload.difficulty,
             status="ready", article_ids_json=list(dict.fromkeys(q.article_id for q in questions)))
@@ -78,6 +99,33 @@ class CurrentAffairsQuizService:
 
     def list(self, user_id="user_001"):
         with self.sessions() as session: return list(session.scalars(select(CurrentAffairsQuiz).where(CurrentAffairsQuiz.user_id == user_id).order_by(CurrentAffairsQuiz.created_at.desc())))
+
+    def active_quiz(self, user_id="user_001"):
+        with self.sessions() as session:
+            rows = list(session.scalars(select(CurrentAffairsQuiz).where(
+                CurrentAffairsQuiz.user_id == user_id, CurrentAffairsQuiz.status == "ready")
+                .order_by(CurrentAffairsQuiz.created_at.desc())))
+            completed_ids = set(session.scalars(select(CurrentAffairsQuizAttempt.quiz_id).where(
+                CurrentAffairsQuizAttempt.user_id == user_id)))
+        return next((row for row in rows if row.id not in completed_ids and self.quiz_is_valid(row.id)), None)
+
+    def abandon(self, quiz_id, user_id="user_001", reason="contaminated_source_text"):
+        with self.sessions() as session:
+            quiz = session.scalar(select(CurrentAffairsQuiz).where(
+                CurrentAffairsQuiz.id == quiz_id, CurrentAffairsQuiz.user_id == user_id))
+            if not quiz:
+                raise ValueError("Current Affairs quiz not found")
+            if quiz.status == "abandoned":
+                return quiz
+            attempt = session.scalar(select(CurrentAffairsQuizAttempt).where(
+                CurrentAffairsQuizAttempt.quiz_id == quiz_id,
+                CurrentAffairsQuizAttempt.user_id == user_id))
+            if attempt or quiz.status == "completed":
+                raise ValueError("Completed Current Affairs quizzes cannot be abandoned")
+            quiz.status = "abandoned"
+            quiz.invalid_reason = reason
+            session.commit(); session.refresh(quiz)
+            return quiz
 
     def submit(self, quiz_id, answers, user_id="user_001"):
         if quiz_id.startswith("demo-"):
@@ -113,10 +161,21 @@ class CurrentAffairsQuizService:
         with self.sessions() as session:
             existing = session.scalar(select(CurrentAffairsQuizAttempt).where(CurrentAffairsQuizAttempt.quiz_id == quiz_id, CurrentAffairsQuizAttempt.user_id == user_id))
             if existing: return self._attempt_result(existing)
+        questions = self.questions(quiz_id)
+        if not questions or not all(self.question_is_valid(question) for question in questions):
+            raise ValueError("This quiz contains invalid extracted source text. Please generate a new quiz.")
+        answer_ids = [item.question_id for item in answers]
+        if len(answer_ids) != len(set(answer_ids)):
+            raise ValueError("Duplicate question IDs are not allowed")
+        if set(answer_ids) - {question.id for question in questions}:
+            raise ValueError("Submitted question IDs do not belong to this quiz")
         submitted = {item.question_id: item.answer for item in answers}; results = []; weak_articles = set(); weak_topics = set()
-        for question in self.questions(quiz_id):
-            answer = submitted.get(question.id, ""); correct = self._norm(answer) == self._norm(question.correct_answer)
-            results.append({"question_id": question.id, "correct": correct, "submitted_answer": answer,
+        for question in questions:
+            answer = submitted.get(question.id)
+            correct = answer is not None and self._norm(answer) == self._norm(question.correct_answer)
+            status = "correct" if correct else "unanswered" if answer is None else "incorrect"
+            results.append({"question_id": question.id, "correct": correct, "status": status,
+                "selected_answer": answer, "submitted_answer": answer,
                 "correct_answer": question.correct_answer, "explanation": question.explanation,
                 "article_id": question.article_id, "source_url": question.source_url, "topic": question.topic})
             if not correct: weak_articles.add(question.article_id); weak_topics.add(question.topic)
@@ -124,7 +183,11 @@ class CurrentAffairsQuizService:
         attempt = CurrentAffairsQuizAttempt(id=str(uuid.uuid4()), user_id=user_id, quiz_id=quiz_id, score=score, total=total,
             percentage=round(score / total * 100, 1), submitted_answers_json=results,
             weak_article_ids_json=sorted(weak_articles), weak_topics_json=sorted(weak_topics), completed_at=now)
-        with self.sessions() as session: session.add(attempt); session.commit(); session.refresh(attempt)
+        with self.sessions() as session:
+            session.add(attempt)
+            stored_quiz = session.get(CurrentAffairsQuiz, quiz_id)
+            stored_quiz.status = "completed"
+            session.commit(); session.refresh(attempt)
         event = self.activity.record_event("current_affairs_quiz_completed", now, user_id=user_id,
             metadata_json={"quiz_id": quiz_id, "score": score, "total": total, "percentage": attempt.percentage})
         for item in results:
@@ -138,8 +201,12 @@ class CurrentAffairsQuizService:
 
     @staticmethod
     def _attempt_result(row):
+        results = row.submitted_answers_json
+        answered = sum(item.get("status") != "unanswered" and item.get("submitted_answer") not in (None, "") for item in results)
         return {"id": row.id, "quiz_id": row.quiz_id, "score": row.score, "total": row.total,
-            "percentage": row.percentage, "results": row.submitted_answers_json,
+            "total_questions": row.total, "answered_count": answered, "unanswered_count": row.total - answered,
+            "correct_count": row.score, "incorrect_count": row.total - row.score,
+            "percentage": row.percentage, "results": results,
             "weak_article_ids": row.weak_article_ids_json, "weak_topics": row.weak_topics_json, "completed_at": row.completed_at}
 
     def _update_retention(self, question, correct, user_id, now):

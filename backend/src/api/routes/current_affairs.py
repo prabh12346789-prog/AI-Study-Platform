@@ -46,13 +46,16 @@ def article_response(row, saved=False, opened=False):
     data = ArticleResponse.model_validate(row).model_dump(); data.update(saved=saved, opened=opened); return data
 
 def quiz_response(row, svc):
+    valid = svc.quiz_is_valid(row.id)
     return {"id": row.id, "title": row.title, "period_type": row.period_type, "date_from": row.date_from,
         "date_to": row.date_to, "question_count": row.question_count, "difficulty": row.difficulty,
-        "status": row.status, "article_ids_json": row.article_ids_json, "created_at": row.created_at,
+        "status": row.status if valid else "invalid_source_text",
+        "message": "" if valid else "This quiz contains invalid extracted source text. Please generate a new quiz.",
+        "article_ids_json": row.article_ids_json, "created_at": row.created_at,
         "updated_at": row.updated_at, "questions": [{"id": q.id, "question_type": q.question_type,
         "question": q.question, "options_json": q.options_json, "article_id": q.article_id,
         "source_url": q.source_url, "subject": q.subject, "topic": q.topic, "difficulty": q.difficulty}
-        for q in svc.questions(row.id)]}
+        for q in svc.questions(row.id)] if valid else []}
 
 def retention_response(row):
     return {key: getattr(row, key) for key in ("id", "user_id", "article_id", "subject", "topic", "retention_score",

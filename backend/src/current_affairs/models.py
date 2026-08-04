@@ -106,6 +106,7 @@ class CurrentAffairsQuiz(Base):
     question_count: Mapped[int] = mapped_column(Integer, nullable=False)
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
+    invalid_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     article_ids_json: Mapped[list] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -23,6 +23,7 @@ interface PrelimsQuestion {
   source_id: string
   source_type: string
   source_title: string
+  source_url?: string
 }
 
 interface PrelimsQuiz {
@@ -36,7 +37,22 @@ interface PrelimsResult {
   score: number
   total: number
   percentage: number
-  breakdown: Array<{ question_id: string; correct: boolean; explanation: string }>
+  total_questions?: number
+  answered_count?: number
+  unanswered_count?: number
+  correct_count?: number
+  incorrect_count?: number
+  breakdown: Array<{ question_id: string; correct: boolean; status?: 'correct' | 'incorrect' | 'unanswered'; selected_answer?: string | null; explanation: string; source_url?: string }>
+}
+
+const INVALID_QUIZ_TEXT = /<|>|querySelector|addEventListener|DOMContentLoaded|function\s*\(|Subscribe Release|Screen Reader Access|PIB Delhi|PIB Mumbai/i
+
+function quizHasInvalidText(quiz: PrelimsQuiz) {
+  return quiz.questions.some(q =>
+    INVALID_QUIZ_TEXT.test(q.question) || q.options.length !== 4 ||
+    new Set(q.options.map(option => option.trim().toLocaleLowerCase())).size !== 4 ||
+    q.options.some(option => option.length > 180 || INVALID_QUIZ_TEXT.test(option))
+  )
 }
 
 interface MainsQuestion {
@@ -157,6 +173,12 @@ export function TestsPage() {
   const [caCount, setCaCount] = useState(10)
   const [caLoading, setCaLoading] = useState(false)
   const [caError, setCaError] = useState('')
+  const [caConfirmOpen, setCaConfirmOpen] = useState(false)
+  const [caHighlightedId, setCaHighlightedId] = useState('')
+  const [caInvalidQuiz, setCaInvalidQuiz] = useState(false)
+  const [caRecoveryLoading, setCaRecoveryLoading] = useState(false)
+  const caQuestionRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const caRecoveryRef = useRef(false)
 
   // Mains state
   const [mainsMarks, setMainsMarks] = useState<10 | 15>(10)
@@ -236,6 +258,7 @@ export function TestsPage() {
       setCaQuiz(data)
       setCaAnswers({})
       setCaResult(null)
+      setCaInvalidQuiz(quizHasInvalidText(data))
       setCaPhase('active')
     } catch (e) {
       setCaError(e instanceof Error ? e.message : 'Failed to generate quiz')
@@ -245,8 +268,21 @@ export function TestsPage() {
     }
   }
 
-  async function submitCaQuiz() {
-    if (!caQuiz) return
+  function submitCaQuiz() {
+    if (!caQuiz || caLoadingRef.current) return
+    const answered = Object.keys(caAnswers).length
+    if (answered === 0) return
+    if (answered < caQuiz.questions.length) {
+      setCaConfirmOpen(true)
+      return
+    }
+    void performCaSubmit()
+  }
+
+  async function performCaSubmit() {
+    if (!caQuiz || caLoadingRef.current) return
+    caLoadingRef.current = true
+    setCaConfirmOpen(false)
     setCaLoading(true)
     setCaError('')
     try {
@@ -259,7 +295,40 @@ export function TestsPage() {
     } catch (e) {
       setCaError(e instanceof Error ? e.message : 'Submission failed')
     } finally {
+      caLoadingRef.current = false
       setCaLoading(false)
+    }
+  }
+
+  function reviewUnansweredCaQuestion() {
+    if (!caQuiz) return
+    setCaConfirmOpen(false)
+    const first = caQuiz.questions.find(question => !caAnswers[question.id])
+    if (!first) return
+    setCaHighlightedId(first.id)
+    caQuestionRefs.current[first.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(() => setCaHighlightedId(current => current === first.id ? '' : current), 1800)
+  }
+
+  async function recoverInvalidCaQuiz() {
+    if (!caQuiz || caRecoveryRef.current) return
+    caRecoveryRef.current = true
+    setCaRecoveryLoading(true)
+    setCaError('')
+    try {
+      await apiFetch(`/tests/current-affairs/${caQuiz.quiz_id}/abandon`, { method: 'POST' })
+      setCaQuiz(null)
+      setCaAnswers({})
+      setCaResult(null)
+      setCaConfirmOpen(false)
+      setCaHighlightedId('')
+      setCaInvalidQuiz(false)
+      setCaPhase('config')
+    } catch (error) {
+      setCaError(error instanceof Error ? error.message : 'Could not abandon the invalid quiz. Please try again.')
+    } finally {
+      caRecoveryRef.current = false
+      setCaRecoveryLoading(false)
     }
   }
 
@@ -495,7 +564,7 @@ export function TestsPage() {
       <div className="tests-config-card">
         <h2 className="tests-section-title">Current Affairs Quiz</h2>
         <p className="tests-description">
-          Questions are generated from accepted official Current Affairs sources stored in your study platform.
+          Questions are generated from accepted official Current Affairs sources, including PIB, RBI, and MEA.
         </p>
         {sources && renderSourceBadge(sources)}
 
@@ -525,8 +594,18 @@ export function TestsPage() {
 
   function renderCAActive() {
     if (!caQuiz) return null
+    if (caInvalidQuiz) return (
+      <div className="tests-config-card">
+        <div className="tests-error">This quiz contains invalid extracted source text. Please generate a new quiz.</div>
+        {caError && <div className="tests-error">{caError}</div>}
+        <button className="tests-start-btn" onClick={() => void recoverInvalidCaQuiz()} disabled={caRecoveryLoading}>
+          {caRecoveryLoading ? 'Preparing clean quiz…' : 'Generate New Quiz'}
+        </button>
+      </div>
+    )
     const answered = Object.keys(caAnswers).length
     const total = caQuiz.questions.length
+    const unanswered = total - answered
     return (
       <div className="tests-active">
         <div className="tests-progress-bar">
@@ -535,8 +614,12 @@ export function TestsPage() {
         <p className="tests-progress-label">{answered} / {total} answered</p>
 
         {caQuiz.questions.map((q, idx) => (
-          <div key={q.id} className={`tests-question-card ${caAnswers[q.id] ? 'answered' : ''}`}>
-            <p className="q-number">Q{idx + 1} · <span className="q-subject">{q.subject}</span></p>
+          <div ref={node => { caQuestionRefs.current[q.id] = node }} key={q.id}
+            className={`tests-question-card ${caAnswers[q.id] ? 'answered' : ''}`}
+            style={caHighlightedId === q.id ? { outline: '2px solid #f59e0b', outlineOffset: '3px' } : undefined}>
+            <p className="q-number">Q{idx + 1} · <span className="q-subject">{q.subject}</span>
+              {caHighlightedId === q.id && !caAnswers[q.id] && <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 700 }}>Unanswered</span>}
+            </p>
             <p className="q-text">{q.question}</p>
             <div className="q-options">
               {q.options.map(opt => (
@@ -561,11 +644,21 @@ export function TestsPage() {
           <button
             className="tests-start-btn"
             onClick={submitCaQuiz}
-            disabled={answered < total || caLoading}
+            disabled={answered === 0 || caLoading}
           >
-            {caLoading ? 'Evaluating…' : `Submit (${answered}/${total})`}
+            {caLoading ? 'Submitting…' : `Submit Quiz (${answered}/${total} answered)`}
           </button>
         </div>
+        {caConfirmOpen && (
+          <div role="dialog" aria-modal="true" aria-labelledby="ca-confirm-title" className="tests-config-card" style={{ marginTop: 16 }}>
+            <h3 id="ca-confirm-title">Submit partial quiz?</h3>
+            <p>{unanswered} {unanswered === 1 ? 'question is' : 'questions are'} unanswered. Unanswered questions will be marked incorrect. Do you want to submit the quiz?</p>
+            <div className="tests-action-row">
+              <button className="tests-ghost-btn" onClick={reviewUnansweredCaQuestion}>Review Questions</button>
+              <button className="tests-start-btn" onClick={() => void performCaSubmit()} disabled={caLoading}>Submit Anyway</button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -581,6 +674,8 @@ export function TestsPage() {
           <div>
             <h2 className="result-score-text">{caResult.score} / {caResult.total} correct</h2>
             <p className="result-grade" style={{ color }}>{pct >= 70 ? '🎉 Excellent' : pct >= 50 ? '👍 Good effort' : '📚 Keep practising'}</p>
+            <p>{caResult.answered_count ?? Object.keys(caAnswers).length} answered · {caResult.unanswered_count ?? (caResult.total - Object.keys(caAnswers).length)} unanswered</p>
+            <p>{caResult.correct_count ?? caResult.score} correct · {caResult.incorrect_count ?? (caResult.total - caResult.score)} incorrect</p>
           </div>
         </div>
         <div className="result-breakdown">
@@ -597,6 +692,7 @@ export function TestsPage() {
                   <p><strong>Your answer:</strong> {caAnswers[q.id] || 'Not answered'}</p>
                   <p><strong>Correct:</strong> {q.correct_answer}</p>
                   <p className="result-explanation">{q.explanation}</p>
+                  {(bd?.source_url || q.source_url) && <a href={bd?.source_url || q.source_url} target="_blank" rel="noopener noreferrer">Official source</a>}
                 </div>
               </details>
             )
@@ -803,7 +899,7 @@ export function TestsPage() {
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <h1>Tests</h1>
           </div>
-          <small>Prelims MCQs, Current Affairs Quiz, and Mains Answer Writing — all grounded in official PWOnlyIAS content.</small>
+          <small>Prelims MCQs, Current Affairs Quiz, and Mains Answer Writing — grounded in verified study material and official Current Affairs sources.</small>
         </div>
       </header>
 

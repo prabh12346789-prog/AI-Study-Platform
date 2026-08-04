@@ -16,6 +16,7 @@ from src.activity.manager import ActivityManager
 from src.activity.taxonomy import SubjectTopicClassifier
 from src.ai.factory import get_llm
 from src.current_affairs.models import CurrentAffairsArticle, DailyCurrentAffairsBrief, SavedCurrentAffairs
+from src.current_affairs.sanitizer import sanitize_current_affairs_text
 from src.memory.storage import get_session_factory
 from src.rag.embeddings import EmbeddingService
 from src.rag.vector_store import VectorStore
@@ -334,11 +335,19 @@ class CurrentAffairsService:
         return [(row, row.id in saved_ids, row.id in opened) for row in unique_rows]
 
     def qa_items(self, *, subject=None, limit=20):
-        rows = [item[0] for item in self.list_articles(subject=subject)][:limit]
-        return [{"article_id": row.id, "question": "What happened?", "answer": row.summary,
-            "question_type": "what_happened", "subject": row.subject, "source_title": row.title,
-            "source_name": row.publisher, "publication_date": row.publication_date,
-            "source_url": row.source_url, "is_demo": False} for row in rows]
+        items = []
+        for row, *_ in self.list_articles(subject=subject):
+            title = sanitize_current_affairs_text(row.title, max_length=180)
+            answer = sanitize_current_affairs_text(row.summary, max_length=600)
+            if not title or not answer:
+                continue
+            items.append({"article_id": row.id, "question": "What happened?", "answer": answer,
+                "question_type": "what_happened", "subject": row.subject, "source_title": title,
+                "source_name": row.publisher, "publication_date": row.publication_date,
+                "source_url": row.source_url, "is_demo": False})
+            if len(items) >= limit:
+                break
+        return items
 
     def get_article(self, article_id, *, user_id="user_001", record_open=True):
         with self.sessions() as session: row = session.get(CurrentAffairsArticle, article_id)

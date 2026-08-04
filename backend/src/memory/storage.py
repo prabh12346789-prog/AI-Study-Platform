@@ -97,6 +97,12 @@ def get_engine(db_path: str | None = None):
                 conn.execute(text("ALTER TABLE upsc_books ADD COLUMN resource_kind TEXT DEFAULT 'study_book'"))
             except Exception:
                 pass
+        existing_quiz_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(current_affairs_quizzes)")).fetchall()}
+        if "invalid_reason" not in existing_quiz_cols:
+            try:
+                conn.execute(text("ALTER TABLE current_affairs_quizzes ADD COLUMN invalid_reason TEXT"))
+            except Exception:
+                pass
         
         # Idempotently update "Post Independence India Prahaar 2026"
         try:

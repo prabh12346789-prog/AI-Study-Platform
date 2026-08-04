@@ -61,6 +61,8 @@ class UnifiedTestsService:
         self.activity = activity or ActivityManager(db_path)
         self.mastery = mastery or MasteryManager(db_path)
         self.llm = llm or get_llm()
+        self.current_affairs_quizzes = CurrentAffairsQuizService(
+            db_path=db_path, activity=self.activity, mastery=self.mastery)
 
     def get_sources_availability(self):
         with self.sessions() as session:
@@ -99,7 +101,7 @@ class UnifiedTestsService:
     def generate_prelims_quiz(self, payload: PrelimsQuizCreate, user_id="user_001"):
         # 1. Validate selected source and filters.
         if payload.source_type == "current_affairs":
-            service = CurrentAffairsQuizService(activity=self.activity, mastery=self.mastery)
+            service = self.current_affairs_quizzes
             quiz = service.generate(QuizCreate(period_type="custom", date_from=date.min,
                 date_to=date.today(), question_count=payload.question_count), user_id=user_id)
             questions = service.questions(quiz.id)
@@ -203,10 +205,14 @@ class UnifiedTestsService:
         return session_data
 
     def submit_prelims_quiz(self, quiz_id: str, questions: list[dict], answers: dict[str, str], user_id="user_001"):
-        if quiz_id.startswith("ca_"):
-            result = CurrentAffairsQuizService(activity=self.activity, mastery=self.mastery).submit(
+        ca_service = self.current_affairs_quizzes
+        if ca_service.get(quiz_id, user_id):
+            result = ca_service.submit(
                 quiz_id, [QuizAnswer(question_id=key, answer=value) for key, value in answers.items()], user_id)
             return {"quiz_id": quiz_id, "score": result["score"], "total": result["total"],
+                "total_questions": result["total_questions"], "answered_count": result["answered_count"],
+                "unanswered_count": result["unanswered_count"], "correct_count": result["correct_count"],
+                "incorrect_count": result["incorrect_count"],
                 "percentage": result["percentage"], "results": result["results"],
                 "breakdown": result["results"], "completed_at": result["completed_at"]}
         results = []

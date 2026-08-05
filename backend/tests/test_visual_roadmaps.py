@@ -37,6 +37,21 @@ class SequenceLLM:
         return response
 
 
+class GeneralLLM:
+    async def generate(self, **_kwargs):
+        source = {"id": "source_1", "source_type": "general", "document": None,
+                  "title": "General UPSC knowledge", "url": None, "publisher": None,
+                  "domain": None, "retrieved_at": None, "source_category": "general",
+                  "trust_level": "general_knowledge", "page_start": None, "page_end": None,
+                  "chunk_id": None}
+        result = payload(nodes=[
+            {"id": "n1", "label": "Regulating Act", "year": "1773", "description": "Parliamentary oversight began.", "importance": "Constitutional development", "source_ids": ["source_1"]},
+            {"id": "n2", "label": "Constitution commenced", "year": "1950", "description": "The Constitution came into force.", "importance": "Republic established", "source_ids": ["source_1"]},
+        ], connections=[{"from": "n1", "to": "n2", "label": "developed into"}])
+        result["sources"] = [source]
+        return json.dumps(result)
+
+
 def service(tmp_path, visual_type="timeline", available=True):
     db = str(tmp_path / "roadmaps.sqlite3")
     return VisualRoadmapService(db_path=db, retriever=FakeRetriever(available), llm=FakeLLM(visual_type),
@@ -93,6 +108,18 @@ def test_valid_roadmap_creates_accessible_svg_and_activity(tmp_path):
 def test_insufficient_context_is_clear(tmp_path):
     with pytest.raises(InsufficientContextError, match="Upload a relevant PDF"):
         asyncio.run(service(tmp_path, available=False).create(VisualRoadmapCreate(topic="Unknown topic", visual_type="timeline")))
+
+
+def test_general_source_bypasses_indexed_retrieval_and_creates_svg(tmp_path):
+    db = str(tmp_path / "general.sqlite3")
+    svc = VisualRoadmapService(db_path=db, retriever=FakeRetriever(False), llm=GeneralLLM(),
+        activity_manager=ActivityManager(db), base_dir=tmp_path / "generated")
+    row = asyncio.run(svc.create(VisualRoadmapCreate(topic="Constitutional history", visual_type="timeline", source_type="general")))
+    structure = RoadmapStructure.model_validate(row.structure_json)
+    assert row.status == "ready" and len(structure.nodes) == 2
+    assert structure.sources[0].source_type == "general"
+    assert structure.sources[0].title == "General UPSC knowledge"
+    assert "Regulating Act" in Path(row.svg_path).read_text(encoding="utf-8")
 
 
 def test_listing_filtering_retrieval_isolation_and_safe_deletion(tmp_path):

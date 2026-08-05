@@ -11,14 +11,15 @@ from src.rag.vector_store import VectorStore
 
 
 def test_health_reports_ollama_embedding_state_without_loading_chat_services(monkeypatch):
+    from src.ai.ollama_status import OllamaStatus
+    import src.ai.ollama_status as ollama_status_module
     get_orchestrator.cache_clear()
     embeddings_before = EmbeddingService.is_loaded()
     vector_store_before = VectorStore.is_initialized()
 
-    monkeypatch.setattr(EmbeddingService, "health_status", lambda: {
-        "provider": "ollama", "model": "nomic-embed-text",
-        "ollama_reachable": True, "model_available": True,
-    })
+    monkeypatch.setattr(ollama_status_module, "availability_status", lambda: OllamaStatus(
+        True, "qwen2.5:3b", True, "nomic-embed-text", True,
+    ))
     with TestClient(app) as client:
         assert client.get("/").status_code == 200
         response = client.get("/health")
@@ -27,7 +28,10 @@ def test_health_reports_ollama_embedding_state_without_loading_chat_services(mon
     assert response.json() == {
         "status": "ok",
         "database": "ready",
-        "ollama": "reachable",
+        "ollama": {
+            "reachable": True, "generation_model": "qwen2.5:3b", "generation_model_available": True,
+            "embedding_model": "nomic-embed-text", "embedding_model_available": True, "error_code": None,
+        },
         "embedding_provider": "ollama",
         "embedding_model": "nomic-embed-text",
         "embedding_model_available": True,

@@ -35,6 +35,19 @@ def submit_prelims(session_id: str, payload: PrelimsSubmitPayload, svc: UnifiedT
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
 
+@router.post("/current-affairs/{quiz_id}/abandon")
+def abandon_current_affairs_quiz(quiz_id: str, svc: UnifiedTestsService = Depends(get_service)):
+    try:
+        quiz = svc.current_affairs_quizzes.abandon(quiz_id)
+        return {"quiz_id": quiz.id, "status": quiz.status, "reason": quiz.invalid_reason}
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+
+@router.get("/current-affairs/active")
+def active_current_affairs_quiz(svc: UnifiedTestsService = Depends(get_service)):
+    quiz = svc.current_affairs_quizzes.active_quiz()
+    return {"quiz_id": quiz.id, "status": quiz.status} if quiz else None
+
 @router.post("/mains/generate")
 def generate_mains(payload: MainsQuestionCreate, svc: UnifiedTestsService = Depends(get_service)):
     try:

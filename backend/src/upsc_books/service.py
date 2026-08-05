@@ -230,7 +230,6 @@ class UPSCBooksService:
                 UPSCBook.normalized_subject,
                 func.count(UPSCBook.id).label("count")
             ).filter(
-                UPSCBook.provider == "PWOnlyIAS",
                 UPSCBook.active == True,
                 ~UPSCBook.title.ilike("%Isolated Test Book%"),
                 ~UPSCBook.title.ilike("%Prog Book%"),
@@ -252,7 +251,7 @@ class UPSCBooksService:
 
     def list_collections(self, subject=None, language=None, exam_stage=None, search=None):
         with self.sessions() as session:
-            query = select(BookCollection).filter(BookCollection.active == True, BookCollection.provider == "PWOnlyIAS")
+            query = select(BookCollection).filter(BookCollection.active == True)
             if language:
                 query = query.filter(BookCollection.language == language)
             if exam_stage:
@@ -269,7 +268,6 @@ class UPSCBooksService:
             saved_ids = set(session.scalars(select(SavedBook.book_id).where(SavedBook.user_id == user_id)))
             query = select(UPSCBook).filter(
                 UPSCBook.active == True,
-                UPSCBook.provider == "PWOnlyIAS",
                 ~UPSCBook.title.ilike("%Isolated Test Book%"),
                 ~UPSCBook.title.ilike("%Prog Book%"),
                 ~UPSCBook.id.like("test-%"),
@@ -365,7 +363,7 @@ class UPSCBooksService:
             blocks = [
                 {"type": "heading", "level": 2, "text": "Book Study Summary & Key Concepts"},
                 {"type": "paragraph", "text": book.description or book.title},
-                {"type": "important_fact", "text": f"Grounded PWOnlyIAS static study book for {book.normalized_subject}."}
+                {"type": "important_fact", "text": f"Grounded {book.provider} study book for {book.normalized_subject}."}
             ]
 
         avail = "available" if book.content_status == "ready" else "unavailable"
@@ -376,7 +374,7 @@ class UPSCBooksService:
             "id": book.id,
             "slug": book.slug,
             "title": book.title,
-            "provider": "PWOnlyIAS",
+            "provider": book.provider,
             "subject": book.normalized_subject,
             "description": book.description,
             "language": book.language,
@@ -457,8 +455,8 @@ class UPSCBooksService:
                 chunks.append({
                     "text": f"{book.title}\nSubject: {book.normalized_subject}\n\n{txt}",
                     "title": book.title,
-                    "publisher": "PWOnlyIAS",
-                    "provider": "PWOnlyIAS",
+                    "publisher": book.provider,
+                    "provider": book.provider,
                     "source_type": "upsc_book",
                     "book_id": book.id,
                     "collection_id": book.collection_id or "",
@@ -477,8 +475,8 @@ class UPSCBooksService:
                 chunks = [{
                     "text": f"{book.title}\n{book.description}\nSubject: {book.normalized_subject}",
                     "title": book.title,
-                    "publisher": "PWOnlyIAS",
-                    "provider": "PWOnlyIAS",
+                    "publisher": book.provider,
+                    "provider": book.provider,
                     "source_type": "upsc_book",
                     "book_id": book.id,
                     "subject": book.normalized_subject

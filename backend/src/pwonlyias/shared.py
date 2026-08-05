@@ -24,6 +24,7 @@ CORE_SUBJECT_MAP = {
     "polity and governance": "Indian Polity and Governance",
     "history": "History",
     "art and culture": "Art and Culture",
+    "geography and disaster management": "Geography and Disaster Management",
     "geography": "Geography",
     "economy": "Indian Economy",
     "indian economy": "Indian Economy",
@@ -42,6 +43,7 @@ CORE_SUBJECT_MAP = {
     "budget": "Budget and Economic Survey",
     "economic survey": "Budget and Economic Survey",
     "essay": "Essay",
+    "csat": "CSAT",
 }
 
 def is_valid_pwonlyias_source_url(url: str) -> bool:

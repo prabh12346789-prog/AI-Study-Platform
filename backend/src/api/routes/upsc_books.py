@@ -21,7 +21,7 @@ def book_response(item: dict):
     return {
         "id": r.id,
         "collection_id": r.collection_id,
-        "provider": "PWOnlyIAS",
+        "provider": r.provider,
         "title": r.title,
         "slug": r.slug,
         "subject": r.normalized_subject,

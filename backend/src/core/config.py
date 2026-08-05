@@ -12,8 +12,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     LLM_PROVIDER: str = "ollama"
-    OLLAMA_MODEL: str = "qwen3:8b"
+    OLLAMA_GENERATION_MODEL: str = "qwen2.5:3b"
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    OLLAMA_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    OLLAMA_GENERATION_TIMEOUT_SECONDS: float = 180.0
     EMBEDDING_PROVIDER: str = "ollama"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OLLAMA_EMBEDDING_TIMEOUT_SECONDS: float = 60.0
@@ -38,7 +40,21 @@ class Settings(BaseSettings):
     CA_DAILY_LANGUAGE: str = "english"
     CA_DAILY_TIME: str = "07:00"
     CURRENT_AFFAIRS_CONTENT_MODE: str = "private_local"
-    REPORT_DEMO_MODE: bool = True
+    CURRENT_AFFAIRS_AUTO_INGEST: bool = False
+    CURRENT_AFFAIRS_INTERVAL_HOURS: int = 6
+    CURRENT_AFFAIRS_STARTUP_MAX_AGE_HOURS: int = 12
+    CURRENT_AFFAIRS_TIMEZONE: str = "Asia/Kolkata"
+    CURRENT_AFFAIRS_REQUEST_TIMEOUT_SECONDS: float = 15.0
+    CURRENT_AFFAIRS_MAX_RESPONSE_BYTES: int = 5242880
+    PIB_RSS_URL: str = "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1"
+    RBI_RSS_URL: str = "https://rbi.org.in/Scripts/rss.aspx"
+    MEA_RSS_URL: str = "https://www.mea.gov.in/rss-feeds.htm"
+    MEA_PRESS_RELEASES_URL: str = "https://www.mea.gov.in/press-releases"
+    CURRENT_AFFAIRS_ALLOWED_DOMAINS: list[str] = [
+        "pib.gov.in", "www.pib.gov.in",
+        "rbi.org.in", "www.rbi.org.in",
+        "mea.gov.in", "www.mea.gov.in"
+    ]
 
     @field_validator("DEBUG", mode="before")
     @classmethod
@@ -48,6 +64,11 @@ class Settings(BaseSettings):
             if normalized in {"release", "production", "prod"}: return False
             if normalized in {"development", "dev"}: return True
         return value
+
+    @field_validator("OLLAMA_BASE_URL", "OLLAMA_GENERATION_MODEL", "OLLAMA_EMBEDDING_MODEL", mode="before")
+    @classmethod
+    def normalize_ollama_setting(cls, value):
+        return value.strip().strip('"\'') if isinstance(value, str) else value
 
     model_config = SettingsConfigDict(
         env_file=".env",

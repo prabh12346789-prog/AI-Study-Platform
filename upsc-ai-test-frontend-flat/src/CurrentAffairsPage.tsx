@@ -1,478 +1,139 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Bookmark, BookOpenCheck, CalendarDays, ExternalLink, Newspaper, RefreshCcw, Search, Sparkles } from 'lucide-react'
 import {
-  CurrentAffairsArticle,
-  CurrentAffairsBrief,
-  CurrentAffairsContentResponse,
-  CurrentAffairsSummary,
-  getCurrentAffairsArticle,
-  getCurrentAffairsArticleContent,
-  getCurrentAffairsArticles,
-  getCurrentAffairsBriefOptional,
-  getCurrentAffairsSummary,
-  saveCurrentAffairsArticle
+  CurrentAffairsArticle, CurrentAffairsContentResponse, CurrentAffairsDatesResponse,
+  CurrentAffairsSyncStatusResponse, getCurrentAffairsArticleContent,
+  getCurrentAffairsArticles, getCurrentAffairsDates, getCurrentAffairsSyncStatus,
+  refreshCurrentAffairs, saveCurrentAffairsArticle,
 } from './api'
-import { resolveInitialCurrentAffairsDate } from './currentAffairsDate'
 import type { AppPage } from './AppShell'
+import { ContentBlocks, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from './PhaseTwoUI'
 
-type SectionTab = 'day' | 'weekly' | 'monthly' | 'subject' | 'qa'
-
-const MANDATED_SUBJECTS = [
-  'All PWOnlyIAS Subjects',
-  'Indian Polity and Governance',
-  'History',
-  'Art and Culture',
-  'Geography',
-  'Indian Economy',
-  'Environment and Ecology',
-  'Science and Technology',
-  'International Relations',
-  'Indian Society and Social Justice',
-  'Internal Security',
-  'Disaster Management',
-  'Ethics',
-  'Agriculture',
-  'Government Schemes',
-  'Reports and Indices',
-  'Places in News',
-  'Other'
-]
-
+const SOURCES = ['All', 'PIB', 'RBI', 'MEA'] as const
 const today = () => new Date().toISOString().slice(0, 10)
 
+function clean(items: CurrentAffairsArticle[]) {
+  return items.filter(item => !item.is_demo && !/pending backfill|image only pdf|mode test|internal reader test/i.test(item.title))
+}
+
+function safeMessage(reason: unknown) {
+  return reason instanceof Error && /failed \(5|network|fetch/i.test(reason.message) ? 'The Current Affairs service is temporarily unavailable.' : 'Official Current Affairs could not be loaded.'
+}
+
 export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
-  const [activeTab, setActiveTab] = useState<SectionTab>('day')
   const [date, setDate] = useState(today())
+  const [source, setSource] = useState<(typeof SOURCES)[number]>('All')
+  const [subject, setSubject] = useState('All Subjects')
   const [search, setSearch] = useState('')
-  const [selectedSubject, setSelectedSubject] = useState<string>('All PWOnlyIAS Subjects')
   const [savedOnly, setSavedOnly] = useState(false)
-
   const [articles, setArticles] = useState<CurrentAffairsArticle[]>([])
-  const [available, setAvailable] = useState<CurrentAffairsArticle[]>([])
-  const [brief, setBrief] = useState<CurrentAffairsBrief | null>(null)
-  const [summary, setSummary] = useState<CurrentAffairsSummary | null>(null)
-
-  const [readerArticle, setReaderArticle] = useState<CurrentAffairsArticle | null>(null)
-  const [readerContent, setReaderContent] = useState<CurrentAffairsContentResponse | null>(null)
-  const [readerLoading, setReaderLoading] = useState(false)
-
+  const [dates, setDates] = useState<CurrentAffairsDatesResponse | null>(null)
+  const [status, setStatus] = useState<CurrentAffairsSyncStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [briefError, setBriefError] = useState('')
   const [dateReady, setDateReady] = useState(false)
-  const manuallySelectedDate = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState('')
+  const [reader, setReader] = useState<CurrentAffairsArticle | null>(null)
+  const [content, setContent] = useState<CurrentAffairsContentResponse | null>(null)
+  const [readerLoading, setReaderLoading] = useState(false)
+  const manualDate = useRef(false)
+  const requestSequence = useRef(0)
+  const articlesRef = useRef<HTMLDivElement | null>(null)
+  const scrollAfterLoad = useRef(false)
 
-  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({})
+  async function loadMetadata() {
+    const [dateData, statusData] = await Promise.all([getCurrentAffairsDates(), getCurrentAffairsSyncStatus().catch(() => null)])
+    setDates(dateData); setStatus(statusData)
+    if (!manualDate.current) setDate(dateData.latest_available_date || today())
+    setDateReady(true)
+  }
 
-  async function loadArticles() {
-    setLoading(true)
-    setError('')
-    const params = new URLSearchParams()
-    if (activeTab === 'day' && date) params.set('date', date)
-    if (activeTab === 'weekly') params.set('cadence', 'weekly')
-    if (activeTab === 'monthly') params.set('cadence', 'monthly')
-    if (activeTab === 'subject' && selectedSubject !== 'All PWOnlyIAS Subjects') params.set('subject', selectedSubject)
-    if (activeTab === 'qa') params.set('content_type', 'prelims_qa')
-    if (search) params.set('search', search)
-
+  async function loadArticles(requestedDate = date) {
+    const requestId = ++requestSequence.current
+    setLoading(true); setError('')
+    const params = new URLSearchParams({ date: requestedDate })
+    if (subject !== 'All Subjects') params.set('subject', subject)
+    if (search.trim()) params.set('search', search.trim())
     try {
-      const data = await getCurrentAffairsArticles(params.toString())
-      const clean = data.filter(a =>
-        (!a.publisher || 
-         a.publisher.toLowerCase().includes('pwonlyias') || 
-         a.publisher === 'PWOnlyIAS' || 
-         ['pib', 'rbi', 'mea', 'forumias', 'insightsias', 'drishti ias'].includes(a.publisher.toLowerCase()) ||
-         a.id.startsWith('dmy-')) &&
-        !a.title.toLowerCase().includes('pending backfill') &&
-        !a.title.toLowerCase().includes('image only pdf') &&
-        !a.title.toLowerCase().includes('mode test') &&
-        !a.title.toLowerCase().includes('internal reader test') &&
-        !a.title.toLowerCase().includes('july week 3') &&
-        !a.title.toLowerCase().includes('july 2026') &&
-        !a.id.startsWith('test-') &&
-        !a.id.startsWith('demo-') &&
-        !a.id.startsWith('sample-')
-      )
-      setArticles(clean)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Current Affairs unavailable.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function loadBrief(force = false) {
-    setBriefError('')
-    try {
-      setBrief(await getCurrentAffairsBriefOptional(date, force))
-    } catch (reason) {
-      setBriefError(reason instanceof Error ? reason.message : 'Daily brief unavailable.')
-    }
-  }
-
-  async function refresh(event?: FormEvent) {
-    event?.preventDefault()
-    const catalog = await getCurrentAffairsArticles()
-    const pwCatalog = catalog.filter(a =>
-      (!a.publisher || 
-       a.publisher.toLowerCase().includes('pwonlyias') || 
-       a.publisher === 'PWOnlyIAS' || 
-       ['pib', 'rbi', 'mea', 'forumias', 'insightsias', 'drishti ias'].includes(a.publisher.toLowerCase()) ||
-       a.id.startsWith('dmy-')) &&
-      !a.title.toLowerCase().includes('pending backfill') &&
-      !a.title.toLowerCase().includes('image only pdf') &&
-      !a.title.toLowerCase().includes('mode test') &&
-      !a.title.toLowerCase().includes('internal reader test') &&
-      !a.title.toLowerCase().includes('july week 3') &&
-      !a.title.toLowerCase().includes('july 2026') &&
-      !a.id.startsWith('test-')
-    )
-    setAvailable(pwCatalog)
-    await Promise.all([
-      loadArticles(),
-      loadBrief(true),
-      getCurrentAffairsSummary().then(setSummary).catch(() => setSummary(null))
-    ])
-  }
-
-  useEffect(() => {
-    let active = true
-    void Promise.all([getCurrentAffairsArticles(), getCurrentAffairsSummary().catch(() => null)])
-      .then(([catalog, overview]) => {
-        if (!active) return
-        const pwCatalog = catalog.filter(a =>
-          (!a.publisher || 
-           a.publisher.toLowerCase().includes('pwonlyias') || 
-           a.publisher === 'PWOnlyIAS' || 
-           ['pib', 'rbi', 'mea', 'forumias', 'insightsias', 'drishti ias'].includes(a.publisher.toLowerCase()) ||
-           a.id.startsWith('dmy-')) &&
-          !a.title.toLowerCase().includes('pending backfill') &&
-          !a.title.toLowerCase().includes('image only pdf') &&
-          !a.title.toLowerCase().includes('mode test') &&
-          !a.title.toLowerCase().includes('internal reader test') &&
-          !a.title.toLowerCase().includes('july week 3') &&
-          !a.title.toLowerCase().includes('july 2026') &&
-          !a.id.startsWith('test-')
-        )
-        setAvailable(pwCatalog)
-        setSummary(overview)
-        setDate(current => resolveInitialCurrentAffairsDate(pwCatalog, today(), current, manuallySelectedDate.current))
-        setDateReady(true)
-      })
-      .catch(reason => {
-        if (active) {
-          setError(reason instanceof Error ? reason.message : 'Current Affairs unavailable.')
-          setDateReady(true)
-        }
-      })
-    return () => { active = false }
-  }, [])
-
-  useEffect(() => {
-    if (!dateReady) return
-    void loadArticles()
-    if (activeTab === 'day') {
-      void loadBrief()
-    }
-  }, [activeTab, date, selectedSubject, search, dateReady])
-
-  const filteredArticles = useMemo(() => {
-    const map = new Map<string, CurrentAffairsArticle>()
-    for (const a of articles) {
-      const key = a.source_url || a.title.trim().toLowerCase()
-      if (!map.has(key)) {
-        map.set(key, a)
+      const result = clean(await getCurrentAffairsArticles(params.toString()))
+      if (requestId !== requestSequence.current) return
+      setArticles(result)
+      if (scrollAfterLoad.current && result.length) {
+        scrollAfterLoad.current = false
+        window.requestAnimationFrame(() => articlesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
       }
     }
-    let result = Array.from(map.values())
-    if (savedOnly) {
-      result = result.filter(a => a.saved)
-    }
-    return result
-  }, [articles, savedOnly])
-
-  async function toggleSave(article: CurrentAffairsArticle) {
-    await saveCurrentAffairsArticle(article.id, article.saved)
-    setArticles(prev => prev.map(a => (a.id === article.id ? { ...a, saved: !a.saved } : a)))
-    if (readerArticle && readerArticle.id === article.id) {
-      setReaderArticle(prev => (prev ? { ...prev, saved: !prev.saved } : null))
-    }
+    catch (reason) { if (requestId === requestSequence.current) setError(safeMessage(reason)) }
+    finally { if (requestId === requestSequence.current) setLoading(false) }
   }
 
-  async function openReader(article: CurrentAffairsArticle) {
-    setReaderArticle(article)
-    setReaderLoading(true)
-    try {
-      const content = await getCurrentAffairsArticleContent(article.id)
-      setReaderContent(content)
-    } catch {
-      setReaderContent(null)
-    } finally {
-      setReaderLoading(false)
-    }
+  useEffect(() => { void loadMetadata().catch(reason => { setError(safeMessage(reason)); setLoading(false) }) }, [])
+  useEffect(() => { if (dateReady && date) void loadArticles() }, [dateReady, date, subject, search])
+
+  const subjects = useMemo(() => ['All Subjects', ...Array.from(new Set(articles.map(item => item.subject).filter(Boolean))).sort()], [articles])
+  const visible = useMemo(() => articles.filter(item => (source === 'All' || item.publisher.toUpperCase() === source) && (!savedOnly || item.saved)), [articles, source, savedOnly])
+  const savedCount = articles.filter(item => item.saved).length
+
+  async function refresh() {
+    setRefreshing(true); setError('')
+    try { await refreshCurrentAffairs(); await loadMetadata() }
+    catch (reason) { setError(safeMessage(reason)) }
+    finally { setRefreshing(false) }
   }
 
-  return (
-    <div className="current-affairs-page phase-four-page" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', color: '#f8fafc' }}>
-      {/* Header */}
-      <header className="phase-page-head" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <p className="eyebrow" style={{ color: '#60a5fa', fontWeight: 'bold', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Affairs & Fallbacks</p>
-            <h1 style={{ margin: '4px 0', fontSize: '1.8rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {activeTab === 'subject' && selectedSubject !== 'All PWOnlyIAS Subjects'
-                ? `Current Affairs — ${selectedSubject}`
-                : 'Current Affairs'}
-              {articles.some(a => a.id.startsWith('dmy-')) && (
-                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', background: '#f59e0b', color: '#1e293b', padding: '2px 8px', borderRadius: '9999px', textTransform: 'uppercase' }}>Report Demo Mode</span>
-              )}
-            </h1>
-            <small style={{ color: '#94a3b8' }}>Verified static & daily UPSC Current Affairs from official PWOnlyIAS and verified fallback sources.</small>
-          </div>
-          <button
-            style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#f8fafc', cursor: 'pointer', fontSize: '0.85rem' }}
-            onClick={refresh}
-          >
-            🔄 Refresh
-          </button>
-        </div>
-      </header>
+  async function toggleSave(item: CurrentAffairsArticle) {
+    try { await saveCurrentAffairsArticle(item.id, item.saved); setArticles(old => old.map(article => article.id === item.id ? { ...article, saved: !article.saved } : article)) }
+    catch { setError('The article could not be saved. Please retry.') }
+  }
 
-      {/* 5 Primary Navigation Tabs */}
-      <nav style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid #334155', paddingBottom: '12px', flexWrap: 'wrap' }}>
-        {[
-          { id: 'day', label: '1. Day-wise' },
-          { id: 'weekly', label: '2. Weekly-wise' },
-          { id: 'monthly', label: '3. Monthly-wise' },
-          { id: 'subject', label: '4. Subject-wise' },
-          { id: 'qa', label: '5. Q&A' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as SectionTab)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: activeTab === tab.id ? '2px solid #3b82f6' : '1px solid #334155',
-              background: activeTab === tab.id ? '#1e3a8a' : '#1e293b',
-              color: activeTab === tab.id ? '#ffffff' : '#94a3b8',
-              fontWeight: activeTab === tab.id ? 'bold' : 'normal',
-              cursor: 'pointer',
-              fontSize: '0.9rem'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+  async function openReader(item: CurrentAffairsArticle) {
+    setReader(item); setContent(null); setReaderLoading(true)
+    try { setContent(await getCurrentAffairsArticleContent(item.id)) } finally { setReaderLoading(false) }
+  }
 
-      {/* Search & Filter Controls Bar */}
-      <section className="premium-card" style={{ padding: '16px', background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {activeTab === 'day' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#60a5fa', textTransform: 'uppercase' }}>Select Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={e => {
-                  manuallySelectedDate.current = true
-                  setDate(e.target.value)
-                }}
-                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155', background: '#0f172a', color: '#f8fafc', fontSize: '0.9rem' }}
-              />
-            </div>
-          )}
+  function askCoach(item: CurrentAffairsArticle) {
+    sessionStorage.setItem('upsc-coach-draft', `Explain the UPSC relevance of this verified Current Affairs article: ${item.title}`)
+    onNavigate('chat')
+  }
 
-          {activeTab === 'subject' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '240px', flex: '0 1 auto' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#60a5fa', textTransform: 'uppercase' }}>Select Subject</label>
-              <select
-                value={selectedSubject}
-                onChange={e => setSelectedSubject(e.target.value)}
-                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155', background: '#0f172a', color: '#f8fafc', fontSize: '0.9rem', width: '100%', cursor: 'pointer' }}
-              >
-                {MANDATED_SUBJECTS.map(subj => (
-                  <option key={subj} value={subj}>{subj}</option>
-                ))}
-              </select>
-            </div>
-          )}
+  const sourceStates = ['PIB', 'RBI', 'MEA'].map(name => ({ name, ok: status?.successful_sources.includes(name), unavailable: status?.unavailable_sources.includes(name) }))
+  const viewLatest = () => {
+    const latest = dates?.latest_available_date
+    if (!latest) return
+    scrollAfterLoad.current = true
+    if (date === latest) void loadArticles(latest)
+    else setDate(latest)
+  }
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '220px' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>Search</label>
-            <input
-              type="text"
-              placeholder="Search Current Affairs by keyword or topic..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #334155', background: '#0f172a', color: '#f8fafc', fontSize: '0.9rem' }}
-            />
-          </div>
+  return <div className="p2-page ca-redesign">
+    <PageHeader eyebrow="Verified official sources" title="Current Affairs" subtitle="Daily, curated UPSC updates from PIB, RBI and MEA." actions={<button className="p2-primary" onClick={() => void refresh()} disabled={refreshing}><RefreshCcw size={15} />{refreshing ? 'Refreshing…' : 'Refresh sources'}</button>} />
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '18px' }}>
-            <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '0.85rem', cursor: 'pointer', color: '#e2e8f0' }}>
-              <input type="checkbox" checked={savedOnly} onChange={e => setSavedOnly(e.target.checked)} />
-              Saved Only
-            </label>
-          </div>
-        </div>
-      </section>
+    <section className="ca-metrics p2-card">
+      <div><Newspaper /><span>Accepted articles<strong>{dates?.total_active_records ?? status?.accepted_article_count ?? 0}</strong></span></div>
+      <div><BookOpenCheck /><span>Active sources<strong>{status?.successful_sources.length ?? 0}</strong></span></div>
+      <div><RefreshCcw /><span>Last synchronized<strong>{status?.last_synchronized_at ? new Date(status.last_synchronized_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not available'}</strong></span></div>
+      <div><Bookmark /><span>Saved on this date<strong>{savedCount}</strong></span></div>
+    </section>
 
-      {/* Main Tab Views */}
-      {error && (
-        <div style={{ padding: '16px', background: '#2d1a1a', border: '1px solid #7f1d1d', color: '#fca5a5', borderRadius: '8px', marginBottom: '16px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>⚠️ {error}</span>
-          <button onClick={() => void refresh()} style={{ background: '#7f1d1d', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>Retry</button>
-        </div>
-      )}
+    <section className="p2-filter-bar" aria-label="Current Affairs filters">
+      <label><span>Date</span><input type="date" value={date} onChange={event => { manualDate.current = true; setDate(event.target.value) }} /></label>
+      <button onClick={viewLatest}>View latest available</button>
+      <label><span>Source</span><select value={source} onChange={event => setSource(event.target.value as typeof source)}>{SOURCES.map(item => <option key={item}>{item}</option>)}</select></label>
+      <label><span>Subject</span><select value={subject} onChange={event => setSubject(event.target.value)}>{subjects.map(item => <option key={item}>{item}</option>)}</select></label>
+      <label className="p2-search"><Search size={14} /><input aria-label="Search Current Affairs" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search articles…" /></label>
+      <label className="p2-check"><input type="checkbox" checked={savedOnly} onChange={event => setSavedOnly(event.target.checked)} /> Saved only</label>
+    </section>
 
-      {loading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>Loading PWOnlyIAS Current Affairs...</div>
-      ) : filteredArticles.length === 0 ? (
-        /* Honest Tab-Specific Empty States */
-        <section className="premium-card" style={{ padding: '48px 24px', background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', textAlign: 'center', maxWidth: '650px', margin: '30px auto' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>
-            {activeTab === 'qa' ? '❓' : '📰'}
-          </div>
-          <h2 style={{ fontSize: '1.3rem', color: '#f8fafc', marginBottom: '8px' }}>
-            {activeTab === 'day' && 'No verified Current Affairs available'}
-            {activeTab === 'weekly' && 'No verified weekly compilation has been imported yet.'}
-            {activeTab === 'monthly' && 'No verified monthly magazine has been imported yet.'}
-            {activeTab === 'subject' && 'No verified Current Affairs available yet'}
-            {activeTab === 'qa' && 'No verified Current Affairs Q&A is available yet.'}
-          </h2>
-          <p style={{ fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.6', marginBottom: '16px' }}>
-            {activeTab === 'day' && 'No verified Current Affairs records are available for this date yet.'}
-            {activeTab === 'weekly' && 'Weekly compilations will appear here after official weekly issues are imported.'}
-            {activeTab === 'monthly' && 'Monthly Manthan magazines will appear here after official monthly issues are imported.'}
-            {activeTab === 'subject' && `No publicly accessible Current Affairs records have been imported for ${selectedSubject} yet.`}
-            {activeTab === 'qa' && 'Grounded practice questions will appear here after official Current Affairs Q&A articles are verified.'}
-          </p>
-        </section>
-      ) : (
-        /* Articles Grid List */
-        <section>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-            {filteredArticles.map(article => {
-              const canRead = article.extraction_status === 'ready' || article.extraction_status === 'completed'
-              return (
-                <article key={article.id} style={{ padding: '16px', background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#60a5fa' }}>{article.subject}</span>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      {article.id.startsWith('dmy-') && (
-                        <span style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#374151', color: '#fbbf24', borderRadius: '4px', fontWeight: 'bold' }}>Demo Data</span>
-                      )}
-                      {article.publisher && article.publisher !== 'PWOnlyIAS' && (
-                        <span style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#1e3a8a', color: '#93c5fd', borderRadius: '4px' }}>Source: {article.publisher}</span>
-                      )}
-                      <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{article.publication_date}</span>
-                    </div>
-                  </div>
-
-                  <h3 style={{ margin: '4px 0 8px 0', fontSize: '1.05rem', color: '#f8fafc' }}>{article.title}</h3>
-                  <p style={{ fontSize: '0.85rem', color: '#cbd5e1', flex: 1, marginBottom: '12px', lineHeight: '1.5' }}>
-                    {article.summary || article.title}
-                  </p>
-
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #334155' }}>
-                    {canRead ? (
-                      <button className="send-button" style={{ padding: '6px 14px', fontSize: '0.85rem' }} onClick={() => openReader(article)}>
-                        Read on Webpage
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: '0.8rem', color: '#94a3b8', background: '#0f172a', padding: '4px 10px', borderRadius: '4px', border: '1px solid #334155' }}>
-                        Content not extracted
-                      </span>
-                    )}
-                    <a href={article.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8rem', color: '#60a5fa' }}>
-                      Official Source
-                    </a>
-                    {article.pdf_url && (
-                      <a href={article.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8rem', color: '#34d399' }}>
-                        View PDF
-                      </a>
-                    )}
-                    <button onClick={() => void toggleSave(article)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem', color: '#94a3b8' }}>
-                      {article.saved ? '♥ Saved' : '♡ Save'}
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Internal Article Reader Modal */}
-      {readerArticle && (
-        <div className="ca-modal" role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
-          <article style={{ background: '#0f172a', border: '1px solid #334155', width: '100%', maxWidth: '850px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)', color: '#f8fafc' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-              <div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#60a5fa' }}>Source: {readerArticle.publisher || 'PWOnlyIAS'}</span>
-                  <span style={{ fontSize: '0.75rem', background: '#1e3a8a', color: '#93c5fd', padding: '2px 8px', borderRadius: '4px' }}>{readerArticle.subject}</span>
-                </div>
-                <h2 style={{ margin: '4px 0 0 0', fontSize: '1.4rem', color: '#f8fafc' }}>{readerArticle.title}</h2>
-              </div>
-              <button className="icon-button" style={{ padding: '6px 12px', border: '1px solid #334155', borderRadius: '6px', background: '#1e293b', color: '#f8fafc', cursor: 'pointer' }} onClick={() => setReaderArticle(null)}>
-                ✕ Close
-              </button>
-            </div>
-
-            {readerLoading ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>Loading article content...</div>
-            ) : (
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '8px' }}>
-                {/* Structured Content Blocks */}
-                {readerContent?.content_blocks && readerContent.content_blocks.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {readerContent.content_blocks.map((block, i) => (
-                      <div key={i}>
-                        {(block.type === 'heading' || block.title) && (
-                          <h3 style={{ margin: '12px 0 6px 0', color: '#f8fafc', fontSize: '1.1rem', borderBottom: '1px solid #334155', paddingBottom: '4px' }}>
-                            {block.text || block.title}
-                          </h3>
-                        )}
-                        {block.type === 'paragraph' && block.text && (
-                          <p style={{ fontSize: '0.95rem', color: '#cbd5e1', lineHeight: '1.6', margin: '4px 0' }}>{block.text}</p>
-                        )}
-                        {(block.type === 'bullet_list' || block.items) && (
-                          <ul style={{ paddingLeft: '20px', fontSize: '0.95rem', color: '#cbd5e1', lineHeight: '1.6' }}>
-                            {(block.items || []).map((it, idx) => <li key={idx}>{it}</li>)}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '16px', background: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '0.95rem', color: '#cbd5e1', lineHeight: '1.6' }}>
-                    <p style={{ margin: '0 0 8px 0' }}>{readerArticle.summary || readerArticle.title}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #334155', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button className="send-button" style={{ padding: '8px 16px' }} onClick={() => { setReaderArticle(null); onNavigate('chat') }}>
-                Ask AI About Article
-              </button>
-              <a href={readerArticle.source_url} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 14px', border: '1px solid #334155', borderRadius: '6px', textDecoration: 'none', color: '#60a5fa', fontSize: '0.85rem', fontWeight: '500' }}>
-                Official Source
-              </a>
-              {readerArticle.pdf_url && (
-                <a href={readerArticle.pdf_url} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 14px', border: '1px solid #059669', color: '#34d399', borderRadius: '6px', textDecoration: 'none', fontSize: '0.85rem', fontWeight: '500' }}>
-                  View PDF
-                </a>
-              )}
-              <button onClick={() => void toggleSave(readerArticle)} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #334155', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', color: '#94a3b8' }}>
-                {readerArticle.saved ? '♥ Saved' : '♡ Save Article'}
-              </button>
-            </div>
-          </article>
-        </div>
-      )}
+    {error && <ErrorState description={error} retry={() => void loadArticles()} />}
+    <div className="ca-layout" ref={articlesRef}><main>{loading ? <LoadingState label="Loading official Current Affairs…" /> : visible.length ? <div className="ca-article-list">{visible.map(item => <article className="ca-official-card p2-card" key={item.id}>
+      <div className="ca-card-meta"><StatusBadge tone={item.publisher.toUpperCase() === 'PIB' ? 'amber' : item.publisher.toUpperCase() === 'RBI' ? 'blue' : 'green'}>{item.publisher}</StatusBadge><StatusBadge tone="violet">{item.subject}</StatusBadge><time>{item.publication_date ?? new Date(item.retrieved_at).toLocaleDateString()}</time></div>
+      <h2>{item.title}</h2><p>{item.summary || 'A concise verified summary is not available for this article.'}</p>
+      {item.syllabus_tags_json?.length ? <small className="ca-gs-tags">{item.syllabus_tags_json.join(' · ')}</small> : null}
+      <footer><button onClick={() => void toggleSave(item)} aria-pressed={item.saved}><Bookmark size={14} />{item.saved ? 'Saved' : 'Save'}</button><button onClick={() => void openReader(item)}>Read material</button><a href={item.source_url} target="_blank" rel="noreferrer">Read original <ExternalLink size={13} /></a><button onClick={() => askCoach(item)}><Sparkles size={14} />Ask AI</button><button onClick={() => onNavigate('tests')}>Generate quiz</button></footer>
+    </article>)}</div> : <EmptyState title={articles.length ? 'No articles match the selected filters.' : 'No verified Current Affairs were published for this date.'} description={articles.length ? 'Change the source, subject, search, or saved-only filter.' : `No accepted official records are available for ${date}.`} action={<button onClick={viewLatest}>View Latest Available</button>} />}</main>
+      <aside className="ca-status-panel p2-card"><h2>Source status</h2>{sourceStates.map(item => <div key={item.name}><span>{item.name}</span><StatusBadge tone={item.ok ? 'green' : item.unavailable ? 'amber' : 'blue'}>{item.ok ? 'Operational' : item.unavailable ? 'Partial failure' : 'Not checked'}</StatusBadge></div>)}<p><CalendarDays size={14} />{status?.last_synchronized_at ? `Updated ${new Date(status.last_synchronized_at).toLocaleString()}` : 'No synchronization timestamp available'}</p></aside>
     </div>
-  )
+
+    {reader && <div className="p2-dialog" role="dialog" aria-modal="true" aria-label={reader.title}><article><header><div><StatusBadge>{reader.publisher}</StatusBadge><h2>{reader.title}</h2></div><button aria-label="Close reader" onClick={() => setReader(null)}>×</button></header>{readerLoading ? <LoadingState label="Loading article…" /> : content?.content_blocks?.length ? <ContentBlocks blocks={content.content_blocks} /> : <EmptyState title="Extracted material unavailable" description="Use the verified original-source link to read this article." />}<footer><button onClick={() => void toggleSave(reader)}>{reader.saved ? 'Unsave' : 'Save'}</button><a href={reader.source_url} target="_blank" rel="noreferrer">Open official source</a></footer></article></div>}
+  </div>
 }

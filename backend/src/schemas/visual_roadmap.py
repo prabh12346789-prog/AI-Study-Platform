@@ -10,7 +10,7 @@ Language = Literal["english", "hindi", "punjabi"]
 class RoadmapSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^[A-Za-z0-9_-]+$", max_length=80)
-    source_type: Literal["pdf", "web"] = "pdf"
+    source_type: Literal["pdf", "web", "general"] = "pdf"
     document: str | None = Field(default=None, max_length=255)
     title: str | None = Field(default=None, max_length=500)
     url: str | None = Field(default=None, max_length=2000)
@@ -29,6 +29,8 @@ class RoadmapSource(BaseModel):
             raise ValueError("PDF source requires a document name")
         if self.source_type == "web" and not (self.title and self.url and self.publisher):
             raise ValueError("Web source requires title, URL, and publisher")
+        if self.source_type == "general" and self.title != "General UPSC knowledge":
+            raise ValueError("General source must use the transparent General UPSC knowledge label")
         return self
 
 
@@ -82,6 +84,8 @@ class VisualRoadmapCreate(BaseModel):
     topic: str = Field(min_length=2, max_length=255)
     visual_type: VisualType
     language: Language = "english"
+    detail_level: Literal["concise", "standard", "detailed"] = "standard"
+    source_type: Literal["general", "upsc_book", "uploaded_pdf", "current_affairs"] = "uploaded_pdf"
     conversation_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 

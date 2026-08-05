@@ -9,27 +9,53 @@ from src.current_affairs.personalization import PersonalizedCurrentAffairsServic
 from src.schemas.current_affairs import ArticleResponse, CollectRequest, CollectResponse, DailyBriefResponse, DailyGenerateRequest
 from src.schemas.current_affairs_quiz import QuizCreate, QuizSubmission
 
+from src.current_affairs.ingestion_service import OfficialCurrentAffairsIngestionService
+
 router = APIRouter()
 
 
 def service(): return CurrentAffairsService()
 def quiz_service(): return CurrentAffairsQuizService()
+def official_ingestion_service(): return OfficialCurrentAffairsIngestionService()
 def require_admin(x_internal_key: str | None = Header(default=None, alias="X-Internal-Key", description="Configured INTERNAL_ADMIN_KEY; never expose this in the student frontend.")):
     if not settings.INTERNAL_ADMIN_KEY: raise HTTPException(status_code=503, detail="Internal collection key is not configured")
     if x_internal_key != settings.INTERNAL_ADMIN_KEY: raise HTTPException(status_code=403, detail="Internal access required")
+
+
+@router.post("/refresh")
+async def refresh_current_affairs():
+    svc = official_ingestion_service()
+    res = await svc.run_ingestion(trigger_type="manual")
+    if res.get("status") == "already_running":
+        raise HTTPException(status_code=409, detail="Current Affairs ingestion is already running")
+    return res
+
+
+@router.get("/dates")
+def current_affairs_dates():
+    return official_ingestion_service().get_dates_metadata()
+
+
+@router.get("/status")
+def current_affairs_status():
+    return official_ingestion_service().get_sync_status()
+
 
 
 def article_response(row, saved=False, opened=False):
     data = ArticleResponse.model_validate(row).model_dump(); data.update(saved=saved, opened=opened); return data
 
 def quiz_response(row, svc):
+    valid = svc.quiz_is_valid(row.id)
     return {"id": row.id, "title": row.title, "period_type": row.period_type, "date_from": row.date_from,
         "date_to": row.date_to, "question_count": row.question_count, "difficulty": row.difficulty,
-        "status": row.status, "article_ids_json": row.article_ids_json, "created_at": row.created_at,
+        "status": row.status if valid else "invalid_source_text",
+        "message": "" if valid else "This quiz contains invalid extracted source text. Please generate a new quiz.",
+        "article_ids_json": row.article_ids_json, "created_at": row.created_at,
         "updated_at": row.updated_at, "questions": [{"id": q.id, "question_type": q.question_type,
         "question": q.question, "options_json": q.options_json, "article_id": q.article_id,
         "source_url": q.source_url, "subject": q.subject, "topic": q.topic, "difficulty": q.difficulty}
-        for q in svc.questions(row.id)]}
+        for q in svc.questions(row.id)] if valid else []}
 
 def retention_response(row):
     return {key: getattr(row, key) for key in ("id", "user_id", "article_id", "subject", "topic", "retention_score",
@@ -139,6 +165,10 @@ def saved(): return [article_response(*item) for item in service().list_articles
 
 @router.get("/summary")
 def summary(): return service().dashboard_summary()
+
+@router.get("/qa")
+def qa(subject: str | None = None, limit: int = Query(default=20, ge=1, le=100)):
+    return service().qa_items(subject=subject, limit=limit)
 
 
 @router.get("/personalized")

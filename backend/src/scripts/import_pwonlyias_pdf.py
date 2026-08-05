@@ -31,6 +31,8 @@ def main():
     parser.add_argument("--subject", required=True, help="UPSC Subject")
     parser.add_argument("--collection", required=True, help="Collection / Hub name")
     parser.add_argument("--source-url", required=True, help="Official PWOnlyIAS webpage source URL")
+    parser.add_argument("--provider", default="PWOnlyIAS", help="Provider label stored with the resource")
+    parser.add_argument("--local-source", action="store_true", help="Import a user-provided local PDF without claiming an official web source")
     parser.add_argument("--file", required=True, help="Path to local PDF file")
     parser.add_argument("--topic", default="", help="Optional topic/chapter name")
     parser.add_argument("--language", default="english", help="Language (default: english)")
@@ -49,7 +51,7 @@ def main():
 
     # 1. Validation
     # Validate URL
-    if not is_valid_pwonlyias_source_url(args.source_url):
+    if not args.local_source and not is_valid_pwonlyias_source_url(args.source_url):
         print(json.dumps({"error": f"Invalid source URL: {args.source_url}. Must belong to official PWOnlyIAS domain."}))
         sys.exit(1)
 
@@ -136,7 +138,7 @@ def main():
         pdf_bytes = f.read()
 
     # Extract Blocks
-    blocks, page_count, ext_status = extract_pdf_blocks(pdf_bytes)
+    blocks, page_count, ext_status = extract_pdf_blocks(pdf_bytes, max_size_mb=100)
 
     # Set status fields
     if ext_status == "ready":
@@ -184,11 +186,12 @@ def main():
         if not col_obj:
             col_obj = BookCollection(
                 id=col_id,
-                provider="PWOnlyIAS",
+                provider=args.provider,
                 title=args.collection,
                 slug=col_id,
                 collection_type="books",
-                official_source_url=args.source_url
+                official_source_url=args.source_url,
+                exam_stage="prelims" if args.prelims and not args.mains else "mains" if args.mains and not args.prelims else "both",
             )
             session.add(col_obj)
 
@@ -198,12 +201,12 @@ def main():
             book_obj = UPSCBook(id=target_id, slug=target_id)
         
         book_obj.collection_id = col_id
-        book_obj.provider = "PWOnlyIAS"
+        book_obj.provider = args.provider
         book_obj.title = args.title
         book_obj.normalized_subject = norm_subject
         book_obj.official_source_url = args.source_url
-        book_obj.official_pdf_url = args.source_url
-        book_obj.canonical_url = f"pwonlyias:book:{target_id}"
+        book_obj.official_pdf_url = None if args.local_source else args.source_url
+        book_obj.canonical_url = f"local-library:book:{target_id}" if args.local_source else f"pwonlyias:book:{target_id}"
         book_obj.content_status = content_status
         book_obj.extraction_status = ext_status
         book_obj.content_checksum = checksum

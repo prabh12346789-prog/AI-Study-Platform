@@ -23,6 +23,7 @@ interface PrelimsQuestion {
   source_id: string
   source_type: string
   source_title: string
+  source_url?: string
 }
 
 interface PrelimsQuiz {
@@ -36,7 +37,27 @@ interface PrelimsResult {
   score: number
   total: number
   percentage: number
-  breakdown: Array<{ question_id: string; correct: boolean; explanation: string }>
+  total_questions?: number
+  answered_count?: number
+  unanswered_count?: number
+  correct_count?: number
+  incorrect_count?: number
+  breakdown: Array<{ question_id: string; correct: boolean; status?: 'correct' | 'incorrect' | 'unanswered'; selected_answer?: string | null; explanation: string; source_url?: string }>
+}
+
+interface TestActivitySummary {
+  recent_events: Array<{ event_type: string; occurred_at: string; metadata?: Record<string, unknown> | null }>
+  daily_breakdown?: Array<{ date: string; study_seconds: number; event_count: number }>
+}
+
+const INVALID_QUIZ_TEXT = /<|>|querySelector|addEventListener|DOMContentLoaded|function\s*\(|Subscribe Release|Screen Reader Access|PIB Delhi|PIB Mumbai/i
+
+function quizHasInvalidText(quiz: PrelimsQuiz) {
+  return quiz.questions.some(q =>
+    INVALID_QUIZ_TEXT.test(q.question) || q.options.length !== 4 ||
+    new Set(q.options.map(option => option.trim().toLocaleLowerCase())).size !== 4 ||
+    q.options.some(option => option.length > 180 || INVALID_QUIZ_TEXT.test(option))
+  )
 }
 
 interface MainsQuestion {
@@ -75,7 +96,7 @@ interface MainsEvaluation {
 }
 
 type Tab = 'prelims' | 'ca' | 'mains'
-type PrelimsSource = 'books'
+type PrelimsSource = 'general' | 'books'
 type TestPhase = 'config' | 'active' | 'result'
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
@@ -139,15 +160,24 @@ export function TestsPage() {
   const [sourcesError, setSourcesError] = useState('')
 
   // Prelims state
-  const [prelimsSource, setPrelimsSource] = useState<PrelimsSource>('books')
+  const [prelimsSource, setPrelimsSource] = useState<PrelimsSource>('general')
   const [prelimsSubject, setPrelimsSubject] = useState('')
+  const [prelimsTopic, setPrelimsTopic] = useState('')
+  const [prelimsDifficulty, setPrelimsDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium')
+  const [prelimsTimeMode, setPrelimsTimeMode] = useState<'timed' | 'untimed'>('timed')
+  const [prelimsMinutes, setPrelimsMinutes] = useState(30)
   const [prelimsCount, setPrelimsCount] = useState(10)
+  const [currentQuestion, setCurrentQuestion] = useState(0)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [activity, setActivity] = useState<TestActivitySummary | null>(null)
   const [quiz, setQuiz] = useState<PrelimsQuiz | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [result, setResult] = useState<PrelimsResult | null>(null)
   const [prelimsPhase, setPrelimsPhase] = useState<TestPhase>('config')
   const [prelimsLoading, setPrelLoading] = useState(false)
   const [prelimsError, setPrelimsError] = useState('')
+  const [prelimsConfirmOpen, setPrelimsConfirmOpen] = useState(false)
+  const [prelimsMarked, setPrelimsMarked] = useState<Record<string, boolean>>({})
 
   // Current Affairs Quiz state
   const [caQuiz, setCaQuiz] = useState<PrelimsQuiz | null>(null)
@@ -157,6 +187,12 @@ export function TestsPage() {
   const [caCount, setCaCount] = useState(10)
   const [caLoading, setCaLoading] = useState(false)
   const [caError, setCaError] = useState('')
+  const [caConfirmOpen, setCaConfirmOpen] = useState(false)
+  const [caHighlightedId, setCaHighlightedId] = useState('')
+  const [caInvalidQuiz, setCaInvalidQuiz] = useState(false)
+  const [caRecoveryLoading, setCaRecoveryLoading] = useState(false)
+  const caQuestionRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const caRecoveryRef = useRef(false)
 
   // Mains state
   const [mainsMarks, setMainsMarks] = useState<10 | 15>(10)
@@ -173,6 +209,24 @@ export function TestsPage() {
     apiFetch<SourcesInfo>('/tests/sources')
       .then(setSources)
       .catch((e) => setSourcesError(e.message))
+    apiFetch<TestActivitySummary>('/activity/summary?range=7d').then(setActivity).catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    if (prelimsPhase !== 'active' || prelimsTimeMode !== 'timed') return
+    const timer = window.setInterval(() => setElapsedSeconds(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [prelimsPhase, prelimsTimeMode])
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('upsc-test-entry')
+    if (!raw) return
+    sessionStorage.removeItem('upsc-test-entry')
+    try {
+      const entry = JSON.parse(raw) as { section?: string; subject?: string }
+      if (entry.section === 'mains') { setTab('mains'); setMainsSubject(entry.subject ?? '') }
+      else { setTab('prelims'); setPrelimsSubject(entry.subject ?? '') }
+    } catch { /* Ignore malformed local navigation state. */ }
   }, [])
 
   // ── Prelims handlers ────────────────────────────────────────────────────────
@@ -187,10 +241,13 @@ export function TestsPage() {
     try {
       const data = await apiFetch<PrelimsQuiz>('/tests/prelims/generate', {
         method: 'POST',
-        body: JSON.stringify({ source_type: prelimsSource, subject: prelimsSubject || undefined, question_count: prelimsCount }),
+        body: JSON.stringify({ source_type: prelimsSource, subject: prelimsSubject || undefined, topic: prelimsTopic || undefined, difficulty: prelimsDifficulty, question_count: prelimsCount }),
       })
       setQuiz(data)
       setAnswers({})
+      setPrelimsMarked({})
+      setCurrentQuestion(0)
+      setElapsedSeconds(0)
       setResult(null)
       setPrelimsPhase('active')
     } catch (e) {
@@ -201,8 +258,17 @@ export function TestsPage() {
     }
   }
 
-  async function submitPrelims() {
-    if (!quiz) return
+  function submitPrelims() {
+    if (!quiz || prelimsLoadingRef.current) return
+    const answered = Object.keys(answers).length
+    if (!answered) return
+    if (answered < quiz.questions.length) { setPrelimsConfirmOpen(true); return }
+    void performPrelimsSubmit()
+  }
+  async function performPrelimsSubmit() {
+    if (!quiz || prelimsLoadingRef.current) return
+    prelimsLoadingRef.current = true
+    setPrelimsConfirmOpen(false)
     setPrelLoading(true)
     setPrelimsError('')
     try {
@@ -215,6 +281,7 @@ export function TestsPage() {
     } catch (e) {
       setPrelimsError(e instanceof Error ? e.message : 'Submission failed')
     } finally {
+      prelimsLoadingRef.current = false
       setPrelLoading(false)
     }
   }
@@ -236,6 +303,7 @@ export function TestsPage() {
       setCaQuiz(data)
       setCaAnswers({})
       setCaResult(null)
+      setCaInvalidQuiz(quizHasInvalidText(data))
       setCaPhase('active')
     } catch (e) {
       setCaError(e instanceof Error ? e.message : 'Failed to generate quiz')
@@ -245,8 +313,21 @@ export function TestsPage() {
     }
   }
 
-  async function submitCaQuiz() {
-    if (!caQuiz) return
+  function submitCaQuiz() {
+    if (!caQuiz || caLoadingRef.current) return
+    const answered = Object.keys(caAnswers).length
+    if (answered === 0) return
+    if (answered < caQuiz.questions.length) {
+      setCaConfirmOpen(true)
+      return
+    }
+    void performCaSubmit()
+  }
+
+  async function performCaSubmit() {
+    if (!caQuiz || caLoadingRef.current) return
+    caLoadingRef.current = true
+    setCaConfirmOpen(false)
     setCaLoading(true)
     setCaError('')
     try {
@@ -259,7 +340,40 @@ export function TestsPage() {
     } catch (e) {
       setCaError(e instanceof Error ? e.message : 'Submission failed')
     } finally {
+      caLoadingRef.current = false
       setCaLoading(false)
+    }
+  }
+
+  function reviewUnansweredCaQuestion() {
+    if (!caQuiz) return
+    setCaConfirmOpen(false)
+    const first = caQuiz.questions.find(question => !caAnswers[question.id])
+    if (!first) return
+    setCaHighlightedId(first.id)
+    caQuestionRefs.current[first.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(() => setCaHighlightedId(current => current === first.id ? '' : current), 1800)
+  }
+
+  async function recoverInvalidCaQuiz() {
+    if (!caQuiz || caRecoveryRef.current) return
+    caRecoveryRef.current = true
+    setCaRecoveryLoading(true)
+    setCaError('')
+    try {
+      await apiFetch(`/tests/current-affairs/${caQuiz.quiz_id}/abandon`, { method: 'POST' })
+      setCaQuiz(null)
+      setCaAnswers({})
+      setCaResult(null)
+      setCaConfirmOpen(false)
+      setCaHighlightedId('')
+      setCaInvalidQuiz(false)
+      setCaPhase('config')
+    } catch (error) {
+      setCaError(error instanceof Error ? error.message : 'Could not abandon the invalid quiz. Please try again.')
+    } finally {
+      caRecoveryRef.current = false
+      setCaRecoveryLoading(false)
     }
   }
 
@@ -341,53 +455,66 @@ export function TestsPage() {
   }
 
   function renderPrelimsConfig() {
+    const availableSubjects = Array.from(new Set([
+      ...(sources?.prelims_books?.subjects ?? []),
+      'Indian Polity and Governance', 'History', 'Geography', 'Indian Economy',
+      'Environment and Ecology', 'Science and Technology', 'Art and Culture',
+      'International Relations', 'Ethics', 'Indian Society', 'CSAT',
+    ])).sort()
     return (
-      <div className="tests-config-card">
-        <h2 className="tests-section-title">Prelims Quiz</h2>
+      <div className="tests-config-card test-builder-card">
+        <h2 className="tests-section-title">Create a New Test</h2>
         <p className="tests-description">
-          Generate an MCQ test grounded in official PWOnlyIAS Books indexed in your study platform.
+          Build a dynamic UPSC MCQ test from general UPSC knowledge or your extracted Books library.
         </p>
         {sources && renderSourceBadge(sources)}
 
         <div className="tests-form">
           <label className="tests-label">
-            Source
+            <span><b>1</b> Test type</span>
+            <select className="tests-select" value={tab} onChange={e => setTab(e.target.value as Tab)}>
+              <option value="prelims">Prelims MCQ</option><option value="ca">Current Affairs Quiz</option><option value="mains">Mains Answer Writing</option>
+            </select>
+          </label>
+          <label className="tests-label">
+            <span><b>2</b> Source</span>
             <select className="tests-select" value={prelimsSource} onChange={e => setPrelimsSource(e.target.value as PrelimsSource)}>
+              <option value="general">General Subject · local AI</option>
               <option value="books" disabled={!sources?.prelims_books?.available}>
                 UPSC Books{!sources?.prelims_books?.available ? ' (no verified books yet)' : ''}
               </option>
             </select>
           </label>
 
-          {sources?.prelims_books?.subjects && sources.prelims_books.subjects.length > 0 && (
-            <label className="tests-label">
-              Subject (optional)
-              <select className="tests-select" value={prelimsSubject} onChange={e => setPrelimsSubject(e.target.value)}>
-                <option value="">All subjects</option>
-                {sources.prelims_books.subjects.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label className="tests-label">
+            <span><b>3</b> Subject</span>
+            <input className="tests-select" list="test-subjects" value={prelimsSubject} onChange={e => setPrelimsSubject(e.target.value)} placeholder="Choose or type any subject" />
+            <datalist id="test-subjects">{availableSubjects.map(subject => <option key={subject} value={subject} />)}</datalist>
+          </label>
+
+          <label className="tests-label"><span><b>4</b> Topic <small>optional</small></span><input className="tests-select" value={prelimsTopic} onChange={e => setPrelimsTopic(e.target.value)} placeholder="e.g. Fundamental Rights" /></label>
+
+          <label className="tests-label"><span><b>5</b> Difficulty</span><div className="tests-segmented">{(['Easy', 'Medium', 'Hard'] as const).map(level => <button type="button" key={level} className={prelimsDifficulty === level ? 'active' : ''} onClick={() => setPrelimsDifficulty(level)}>{level}</button>)}</div></label>
 
           <label className="tests-label">
-            Number of questions
+            <span><b>6</b> Number of questions</span>
             <div className="tests-counter">
               <button className="counter-btn" onClick={() => setPrelimsCount(c => Math.max(5, c - 5))}>−</button>
               <span className="counter-val">{prelimsCount}</span>
               <button className="counter-btn" onClick={() => setPrelimsCount(c => Math.min(25, c + 5))}>+</button>
             </div>
           </label>
+
+          <label className="tests-label"><span><b>7</b> Time mode</span><div className="tests-time-row"><div className="tests-segmented"><button type="button" className={prelimsTimeMode === 'timed' ? 'active' : ''} onClick={() => setPrelimsTimeMode('timed')}>Timed</button><button type="button" className={prelimsTimeMode === 'untimed' ? 'active' : ''} onClick={() => setPrelimsTimeMode('untimed')}>Untimed</button></div>{prelimsTimeMode === 'timed' && <select aria-label="Test duration" className="tests-select" value={prelimsMinutes} onChange={e => setPrelimsMinutes(Number(e.target.value))}><option value={15}>15 min</option><option value={30}>30 min</option><option value={60}>60 min</option><option value={120}>120 min</option></select>}</div></label>
         </div>
 
         {prelimsError && <div className="tests-error">{prelimsError}</div>}
 
-        <button className="tests-start-btn" onClick={startPrelims} disabled={prelimsLoading || !sources?.prelims_books?.available}>
+        <button className="tests-start-btn" onClick={startPrelims} disabled={prelimsLoading || (prelimsSource === 'books' && !sources?.prelims_books?.available)}>
           {prelimsLoading ? 'Generating…' : 'Start Quiz'}
         </button>
 
-        {sources && !sources.prelims_books?.available && (
+        {sources && prelimsSource === 'books' && !sources.prelims_books?.available && (
           <p className="tests-unavail">No eligible UPSC Books are indexed yet. Add books via the UPSC Books page to unlock Prelims Quiz.</p>
         )}
       </div>
@@ -398,15 +525,19 @@ export function TestsPage() {
     if (!quiz) return null
     const answered = Object.keys(answers).length
     const total = quiz.questions.length
+    const remaining = Math.max(0, prelimsMinutes * 60 - elapsedSeconds)
+    const timerLabel = prelimsTimeMode === 'timed' ? `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}` : 'Untimed'
     return (
-      <div className="tests-active">
+      <div className="tests-active test-workspace">
+        <header className="active-test-header"><div><span className="live-pill">● Live</span><small>{prelimsSubject || 'General Studies'} · {prelimsTopic || 'All topics'}</small><h2>Prelims MCQ Test</h2></div><div className="active-test-metrics"><span><b>{answered}/{total}</b> Answered</span><span><b>{timerLabel}</b> Time left</span><span><b>{prelimsDifficulty}</b> Difficulty</span></div></header>
         <div className="tests-progress-bar">
           <div className="tests-progress-fill" style={{ width: `${(answered / total) * 100}%` }} />
         </div>
         <p className="tests-progress-label">{answered} / {total} answered</p>
+        <nav className="question-navigator" aria-label="Question navigator">{quiz.questions.map((q, idx) => <button key={q.id} aria-current={currentQuestion === idx ? 'step' : undefined} aria-label={`Question ${idx + 1}: ${answers[q.id] ? 'answered' : 'unanswered'}${prelimsMarked[q.id] ? ', marked for review' : ''}`} className={`${answers[q.id] ? 'answered' : 'unanswered'} ${prelimsMarked[q.id] ? 'marked' : ''} ${currentQuestion === idx ? 'current' : ''}`} onClick={() => setCurrentQuestion(idx)}>{idx + 1}</button>)}</nav>
 
-        {quiz.questions.map((q, idx) => (
-          <div key={q.id} className={`tests-question-card ${answers[q.id] ? 'answered' : ''}`}>
+        {quiz.questions.map((q, idx) => idx !== currentQuestion ? null : (
+          <div id={`prelims-${q.id}`} key={q.id} className={`tests-question-card ${answers[q.id] ? 'answered' : ''}`}>
             <p className="q-number">Q{idx + 1} · <span className="q-subject">{q.subject}</span></p>
             <p className="q-text">{q.question}</p>
             <div className="q-options">
@@ -420,23 +551,36 @@ export function TestsPage() {
                 </button>
               ))}
             </div>
+            <div className="question-tools">
+              <button onClick={() => setPrelimsMarked(old => ({ ...old, [q.id]: !old[q.id] }))}>
+                {prelimsMarked[q.id] ? 'Unmark review' : 'Mark for review'}
+              </button>
+              <button disabled={!answers[q.id]} onClick={() => setAnswers(old => {
+                const next = { ...old }
+                delete next[q.id]
+                return next
+              })}>Clear answer</button>
+            </div>
           </div>
         ))}
 
         {prelimsError && <div className="tests-error">{prelimsError}</div>}
 
         <div className="tests-action-row">
+          <button className="tests-ghost-btn" disabled={currentQuestion === 0} onClick={() => setCurrentQuestion(value => Math.max(0, value - 1))}>Previous</button>
+          <button className="tests-ghost-btn" disabled={currentQuestion === total - 1} onClick={() => setCurrentQuestion(value => Math.min(total - 1, value + 1))}>Next</button>
           <button className="tests-ghost-btn" onClick={() => { setPrelimsPhase('config'); setQuiz(null) }}>
             ← Back
           </button>
           <button
             className="tests-start-btn"
             onClick={submitPrelims}
-            disabled={answered < total || prelimsLoading}
+            disabled={answered === 0 || prelimsLoading}
           >
             {prelimsLoading ? 'Evaluating…' : `Submit (${answered}/${total})`}
           </button>
         </div>
+        {prelimsConfirmOpen && <div role="dialog" aria-modal="true" aria-labelledby="prelims-confirm-title" className="tests-config-card"><h3 id="prelims-confirm-title">Submit partial test?</h3><p>{total - answered} unanswered questions will count as incorrect. Your score denominator remains {total}.</p><div className="tests-action-row"><button className="tests-ghost-btn" onClick={() => setPrelimsConfirmOpen(false)}>Continue answering</button><button className="tests-start-btn" onClick={() => void performPrelimsSubmit()}>Submit anyway</button></div></div>}
       </div>
     )
   }
@@ -495,7 +639,7 @@ export function TestsPage() {
       <div className="tests-config-card">
         <h2 className="tests-section-title">Current Affairs Quiz</h2>
         <p className="tests-description">
-          Test your knowledge of recent Current Affairs. Questions are grounded in indexed PWOnlyIAS Current Affairs articles only.
+          Questions are generated from accepted official Current Affairs sources, including PIB, RBI, and MEA.
         </p>
         {sources && renderSourceBadge(sources)}
 
@@ -517,7 +661,7 @@ export function TestsPage() {
         </button>
 
         {sources && !sources.current_affairs.available && (
-          <p className="tests-unavail">No eligible Current Affairs articles are indexed yet. Sync Current Affairs to unlock this quiz.</p>
+          <p className="tests-unavail">No eligible official Current Affairs articles are available for quiz generation.</p>
         )}
       </div>
     )
@@ -525,8 +669,18 @@ export function TestsPage() {
 
   function renderCAActive() {
     if (!caQuiz) return null
+    if (caInvalidQuiz) return (
+      <div className="tests-config-card">
+        <div className="tests-error">This quiz contains invalid extracted source text. Please generate a new quiz.</div>
+        {caError && <div className="tests-error">{caError}</div>}
+        <button className="tests-start-btn" onClick={() => void recoverInvalidCaQuiz()} disabled={caRecoveryLoading}>
+          {caRecoveryLoading ? 'Preparing clean quiz…' : 'Generate New Quiz'}
+        </button>
+      </div>
+    )
     const answered = Object.keys(caAnswers).length
     const total = caQuiz.questions.length
+    const unanswered = total - answered
     return (
       <div className="tests-active">
         <div className="tests-progress-bar">
@@ -535,8 +689,12 @@ export function TestsPage() {
         <p className="tests-progress-label">{answered} / {total} answered</p>
 
         {caQuiz.questions.map((q, idx) => (
-          <div key={q.id} className={`tests-question-card ${caAnswers[q.id] ? 'answered' : ''}`}>
-            <p className="q-number">Q{idx + 1} · <span className="q-subject">{q.subject}</span></p>
+          <div ref={node => { caQuestionRefs.current[q.id] = node }} key={q.id}
+            className={`tests-question-card ${caAnswers[q.id] ? 'answered' : ''}`}
+            style={caHighlightedId === q.id ? { outline: '2px solid #f59e0b', outlineOffset: '3px' } : undefined}>
+            <p className="q-number">Q{idx + 1} · <span className="q-subject">{q.subject}</span>
+              {caHighlightedId === q.id && !caAnswers[q.id] && <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 700 }}>Unanswered</span>}
+            </p>
             <p className="q-text">{q.question}</p>
             <div className="q-options">
               {q.options.map(opt => (
@@ -561,11 +719,21 @@ export function TestsPage() {
           <button
             className="tests-start-btn"
             onClick={submitCaQuiz}
-            disabled={answered < total || caLoading}
+            disabled={answered === 0 || caLoading}
           >
-            {caLoading ? 'Evaluating…' : `Submit (${answered}/${total})`}
+            {caLoading ? 'Submitting…' : `Submit Quiz (${answered}/${total} answered)`}
           </button>
         </div>
+        {caConfirmOpen && (
+          <div role="dialog" aria-modal="true" aria-labelledby="ca-confirm-title" className="tests-config-card" style={{ marginTop: 16 }}>
+            <h3 id="ca-confirm-title">Submit partial quiz?</h3>
+            <p>{unanswered} {unanswered === 1 ? 'question is' : 'questions are'} unanswered. Unanswered questions will be marked incorrect. Do you want to submit the quiz?</p>
+            <div className="tests-action-row">
+              <button className="tests-ghost-btn" onClick={reviewUnansweredCaQuestion}>Review Questions</button>
+              <button className="tests-start-btn" onClick={() => void performCaSubmit()} disabled={caLoading}>Submit Anyway</button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -581,6 +749,8 @@ export function TestsPage() {
           <div>
             <h2 className="result-score-text">{caResult.score} / {caResult.total} correct</h2>
             <p className="result-grade" style={{ color }}>{pct >= 70 ? '🎉 Excellent' : pct >= 50 ? '👍 Good effort' : '📚 Keep practising'}</p>
+            <p>{caResult.answered_count ?? Object.keys(caAnswers).length} answered · {caResult.unanswered_count ?? (caResult.total - Object.keys(caAnswers).length)} unanswered</p>
+            <p>{caResult.correct_count ?? caResult.score} correct · {caResult.incorrect_count ?? (caResult.total - caResult.score)} incorrect</p>
           </div>
         </div>
         <div className="result-breakdown">
@@ -597,6 +767,7 @@ export function TestsPage() {
                   <p><strong>Your answer:</strong> {caAnswers[q.id] || 'Not answered'}</p>
                   <p><strong>Correct:</strong> {q.correct_answer}</p>
                   <p className="result-explanation">{q.explanation}</p>
+                  {(bd?.source_url || q.source_url) && <a href={bd?.source_url || q.source_url} target="_blank" rel="noopener noreferrer">Official source</a>}
                 </div>
               </details>
             )
@@ -795,20 +966,25 @@ export function TestsPage() {
 
   // ── Page structure ──────────────────────────────────────────────────────────
 
+  const completedTests = activity?.recent_events.filter(event => /test_completed/.test(event.event_type)) ?? []
+  const scores = completedTests.map(event => Number(event.metadata?.percentage)).filter(Number.isFinite)
+  const averageScore = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null
+  const bestScore = scores.length ? Math.max(...scores) : null
+  const activeDays = new Set((activity?.daily_breakdown ?? []).filter(day => day.event_count > 0).map(day => day.date)).size
+
   return (
     <div className="tests-page">
       <header className="topbar">
         <div>
           <p className="eyebrow">Exam Practice</p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <h1>Tests</h1>
-            {sources?.demo_mode && (
-              <span className="demo-badge" style={{ fontSize: '0.75rem', fontWeight: 'bold', background: '#f59e0b', color: '#1e293b', padding: '2px 8px', borderRadius: '9999px', textTransform: 'uppercase' }}>Report Demo Mode</span>
-            )}
+            <h1>Tests Center</h1>
           </div>
-          <small>Prelims MCQs, Current Affairs Quiz, and Mains Answer Writing — all grounded in official PWOnlyIAS content.</small>
+          <small>Prelims MCQs, Current Affairs Quiz, and Mains Answer Writing — grounded in verified study material and official Current Affairs sources.</small>
         </div>
       </header>
+
+      <section className="tests-metric-strip" aria-label="Test performance summary"><article><span>Tests taken</span><strong>{completedTests.length}</strong></article><article><span>Average score</span><strong>{averageScore == null ? 'No attempts' : `${averageScore}%`}</strong></article><article><span>Best score</span><strong>{bestScore == null ? 'No attempts' : `${bestScore}%`}</strong></article><article><span>Active days</span><strong>{activeDays}</strong></article></section>
 
       {sourcesError && <div className="tests-error global-error">{sourcesError}</div>}
 

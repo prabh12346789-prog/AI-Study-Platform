@@ -1,12 +1,5 @@
 # Architectural Decisions
 
-## Reversible Report Demo Mode
-
-- Date: 2026-07-24
-- Decision: Add a local-only `REPORT_DEMO_MODE=true` environment toggle that serves realistic demo data dynamically for the Dashboard/Progress, Current Affairs, and Tests screens without modifying the real SQL tables, Chroma vectors, or user profile records. Implement a `seed_report_demo_data.py` script to toggle this setting in `.env`.
-- Reason: Simplifies generating reports and demo screenshots by instantly populating all areas with realistic mock data while avoiding database pollution or risk to real user learning data.
-- Status: Accepted
-
 ## Removal of UPSC Notes Feature
 
 ## Independent premium frontend
@@ -190,3 +183,24 @@
 - Trust boundary: Current Affairs accepts only domains in its explicit source-adapter catalog even when another domain is permitted for general Chat grounding. Quiz, test, answer-writing, archive, index, tag, search, login, and channel pages are rejected before extraction.
 - Atomicity: An active article is indexed before its database commit. Summary/grounding/indexing failures return structured diagnostics but create no article record. Legacy misclassified active records are archived and their Current Affairs vectors removed.
 - Diagnostics: Every collection result carries zero-inclusive rejection counts for URL, domain, redirect, page type, duplicates, HTTP/challenge, extraction quality, metadata, summarization, grounding, and indexing stages without storing page bodies or secrets.
+
+# Explicit General source for Visual Roadmaps
+
+- Date: 2026-08-05
+- Decision: Treat `general` as an explicit Visual Roadmap source mode. It bypasses document retrieval, asks the configured local model to use established UPSC knowledge, labels the result `General UPSC knowledge`, and otherwise uses the same validated structure, SVG rendering, persistence, history, and export pipeline.
+- Reason: General-topic visual generation should work without an uploaded or indexed document, while material-backed modes must retain their strict grounding boundary.
+- Safety boundary: General mode remains transparent about its source class and does not fabricate document citations. Uploaded PDF, UPSC book, and Current Affairs modes still fail clearly when their selected material has insufficient indexed context.
+
+# Canonical Ollama generation configuration and availability
+
+- Date: 2026-08-05
+- Decision: Use `OLLAMA_BASE_URL` and `OLLAMA_GENERATION_MODEL` as the canonical generation settings, while retaining the separate `OLLAMA_EMBEDDING_MODEL`. All values are whitespace/quote normalized before use.
+- Availability: A shared `/api/tags` check reports server reachability and generation/embedding model availability independently without running an expensive generation probe.
+- Failure contract: Visual Roadmaps return distinct safe codes for an unavailable server, health timeout, missing generation model, invalid health response, generation timeout, and failure after generation begins.
+
+# General Subject tests use the configured local model
+
+- Date: 2026-08-05
+- Decision: `general` is an explicit Prelims test source. It uses the configured local generation model, validates an exact JSON question contract, rejects incomplete, contaminated, or malformed output, and labels questions as `General UPSC knowledge`.
+- Reason: Learners need subject practice even when no book is indexed. This keeps generation local and transparent without pretending the result has a document citation.
+- Compatibility: Existing `books` and `current_affairs` source types are unchanged. Book quizzes continue to use extracted real book blocks, and Current Affairs quizzes continue to use only accepted clean records.

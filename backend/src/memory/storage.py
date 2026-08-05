@@ -76,6 +76,14 @@ def get_engine(db_path: str | None = None):
             ("content_checksum", "TEXT"),
             ("extracted_text", "TEXT"),
             ("indexed_at", "DATETIME"),
+            ("summary_method", "TEXT DEFAULT 'extractive'"),
+            ("summary_model", "TEXT DEFAULT 'extractive_fallback'"),
+            ("summary_generated_at", "DATETIME"),
+            ("gs_paper", "TEXT"),
+            ("relevance_reason", "TEXT"),
+            ("classification_method", "TEXT DEFAULT 'deterministic_keywords'"),
+            ("is_demo", "BOOLEAN DEFAULT 0"),
+            ("rejection_reason", "TEXT"),
         ]
         for col_name, col_type in new_cols:
             if col_name not in existing_cols:
@@ -87,6 +95,12 @@ def get_engine(db_path: str | None = None):
         if "resource_kind" not in existing_books_cols:
             try:
                 conn.execute(text("ALTER TABLE upsc_books ADD COLUMN resource_kind TEXT DEFAULT 'study_book'"))
+            except Exception:
+                pass
+        existing_quiz_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(current_affairs_quizzes)")).fetchall()}
+        if "invalid_reason" not in existing_quiz_cols:
+            try:
+                conn.execute(text("ALTER TABLE current_affairs_quizzes ADD COLUMN invalid_reason TEXT"))
             except Exception:
                 pass
         

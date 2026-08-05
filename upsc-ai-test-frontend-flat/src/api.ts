@@ -34,7 +34,7 @@ export interface ActivityEventInput {
 }
 
 export interface ActivityBreakdown { name: string; study_seconds: number; event_count: number }
-export interface ActivityEvent { id: string; event_type: string; subject: string | null; topic: string | null; occurred_at: string }
+export interface ActivityEvent { id: string; event_type: string; subject: string | null; topic: string | null; occurred_at: string; duration_seconds?: number | null; metadata?: Record<string, unknown> | null }
 export interface ActivitySummary {
   total_study_seconds: number; questions_asked: number; answers_generated: number; pdfs_uploaded: number
   subjects_studied: number; top_subject: string | null; top_topic: string | null
@@ -103,7 +103,7 @@ export interface PdfDocument {
   indexed: boolean
 }
 export type VisualType = 'timeline' | 'flowchart' | 'concept_map' | 'comparison' | 'process' | 'cause_effect'
-export interface RoadmapSource { id: string; source_type: 'pdf' | 'web'; document: string | null; title: string | null; url: string | null; publisher: string | null; domain: string | null; retrieved_at: string | null; source_category: string | null; trust_level: string | null; page_start: number | null; page_end: number | null; chunk_id: string | null }
+export interface RoadmapSource { id: string; source_type: 'pdf' | 'web' | 'general'; document: string | null; title: string | null; url: string | null; publisher: string | null; domain: string | null; retrieved_at: string | null; source_category: string | null; trust_level: string | null; page_start: number | null; page_end: number | null; chunk_id: string | null }
 export interface VisualRoadmap { id: string; status: string; title: string; subject: string; topic: string; visual_type: VisualType; language: string; conversation_id: string | null; svg_url: string; created_at: string; updated_at: string; sources: RoadmapSource[]; structure: { title: string; summary: string; visual_type: VisualType; nodes: Array<{ id: string; label: string; description: string; source_ids: string[] }>; connections: Array<{ from: string; to: string; label: string }>; exam_points: string[]; sources: RoadmapSource[] } }
 export interface RoadmapQuizQuestion { id: string; roadmap_id: string; question_type: 'mcq' | 'sequence' | 'match_year' | 'true_false' | 'short_recall'; question: string; options: string[]; correct_answer: string; explanation: string; source_node_ids: string[]; difficulty: 'easy' | 'standard' | 'difficult' }
 export interface RoadmapQuiz { id: string; roadmap_id: string; difficulty: string; questions: RoadmapQuizQuestion[] }
@@ -122,7 +122,7 @@ export interface ContentBlock {
 export interface CurrentAffairsArticle {
   id: string; title: string; summary: string; source_title: string; publisher: string; source_url: string; source_type: string
   publication_date: string | null; retrieved_at: string; subject: string; topic: string; syllabus_tags_json: string[]
-  importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string
+  importance_level: 'low' | 'medium' | 'high'; relevance_prelims: string; relevance_mains: string; status: string; is_demo: boolean
   saved: boolean; opened: boolean
   slug?: string | null; cadence?: 'daily' | 'weekly' | 'monthly' | 'special' | null
   content_type?: 'article' | 'compilation' | 'editorial' | 'prelims_qa' | 'mains_qa' | null
@@ -371,12 +371,21 @@ export async function listPdfDocuments(): Promise<PdfDocument[]> {
   return response.json()
 }
 
+export class VisualRoadmapApiError extends Error {
+  constructor(public code: string, message: string, public model?: string, public action?: string) { super(message) }
+}
+export async function recordMasteryEvidence(input: { subject: string; topic: string; evidence_type: 'revision_completed' | 'recall_success' | 'recall_failure'; score?: number; confidence?: number; source?: string }): Promise<TopicMastery> {
+  const response = await fetch(`${API_BASE_URL}/mastery/evidence`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+  if (!response.ok) throw new Error(`Revision evidence failed (${response.status}): ${await response.text()}`)
+  return response.json()
+}
 async function roadmapRequest<T>(path = '', init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}/visual-roadmaps${path}`, init)
-  if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string | { message?: string } } | null; const detail = typeof body?.detail === 'object' ? body.detail.message : body?.detail; throw new Error(detail || `Visual roadmap request failed (${response.status})`) }
+  if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: string | { code?: string; message?: string; model?: string; action?: string } } | null; const detail = typeof body?.detail === 'object' ? body.detail : null; throw new VisualRoadmapApiError(detail?.code || 'request_failed', detail?.message || (typeof body?.detail === 'string' ? body.detail : `Visual roadmap request failed (${response.status})`), detail?.model, detail?.action) }
   return response.status === 204 ? undefined as T : response.json()
 }
-export const createVisualRoadmap = (input: { topic: string; visual_type: VisualType; language: string; conversation_id?: string | null }) => roadmapRequest<VisualRoadmap>('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+export type VisualSourceType = 'general' | 'upsc_book' | 'uploaded_pdf' | 'current_affairs'
+export const createVisualRoadmap = (input: { topic: string; visual_type: VisualType; language: string; detail_level?: 'concise' | 'standard' | 'detailed'; source_type?: VisualSourceType; conversation_id?: string | null }) => roadmapRequest<VisualRoadmap>('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
 export const listVisualRoadmaps = () => roadmapRequest<VisualRoadmap[]>()
 export const deleteVisualRoadmap = (id: string) => roadmapRequest<void>(`/${id}`, { method: 'DELETE' })
 export const saveVisualRoadmap = (id: string) => roadmapRequest<void>(`/${id}/save`, { method: 'POST' })
@@ -430,6 +439,24 @@ export const getCurrentAffairsQuizzes = () => currentAffairsRequest<CurrentAffai
 export const getCurrentAffairsQuizAttempts = (id: string) => currentAffairsRequest<CurrentAffairsQuizResult[]>(`/quizzes/${id}/attempts`)
 export const submitCurrentAffairsQuiz = (id: string, answers: Array<{ question_id: string; answer: string }>) => currentAffairsRequest<CurrentAffairsQuizResult>(`/quizzes/${id}/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) })
 export const getCurrentAffairsRetentionOverview = () => currentAffairsRequest<CurrentAffairsRetentionOverview>('/retention/overview')
+export interface CurrentAffairsDatesResponse {
+  available_dates: string[]
+  latest_available_date: string
+  earliest_available_date: string
+  today_record_count: number
+  total_active_records: number
+}
+export interface CurrentAffairsSyncStatusResponse {
+  last_synchronized_at: string | null
+  sources_checked: string[]
+  successful_sources: string[]
+  unavailable_sources: string[]
+  accepted_article_count: number
+  last_run_status: string
+}
+export const getCurrentAffairsDates = () => currentAffairsRequest<CurrentAffairsDatesResponse>('/dates')
+export const getCurrentAffairsSyncStatus = () => currentAffairsRequest<CurrentAffairsSyncStatusResponse>('/status')
+export const refreshCurrentAffairs = () => currentAffairsRequest<{ run_id: string; status: string; accepted: number; fetched: number }>('/refresh', { method: 'POST' })
 export const markCurrentAffairsRevised = (id: string) => currentAffairsRequest<CurrentAffairsRetention>(`/retention/${id}/revise`, { method: 'POST' })
 
 // UPSC Books API

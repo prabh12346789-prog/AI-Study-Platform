@@ -1,4 +1,7 @@
 import uuid
+import asyncio
+import json
+import re
 import logging
 from datetime import date, datetime, timezone
 from sqlalchemy import select, func, or_
@@ -20,9 +23,9 @@ from src.tests_engine.models import MainsTestSession, MainsQuestion, MainsAnswer
 log = logging.getLogger(__name__)
 
 def is_eligible_book(book: UPSCBook) -> bool:
-    if not book or not book.active or book.provider != "PWOnlyIAS":
+    if not book or not book.active or book.provider not in {"PWOnlyIAS", "User-provided"}:
         return False
-    if book.extraction_status != "ready" or book.indexing_status != "indexed":
+    if book.extraction_status != "ready" or book.indexing_status not in {"indexed", "indexing_skipped"}:
         return False
     if book.resource_kind != "study_book":
         return False
@@ -37,8 +40,9 @@ def is_eligible_book(book: UPSCBook) -> bool:
     return True
 
 class PrelimsQuizCreate(BaseModel):
-    source_type: str = Field(default="books")  # books
+    source_type: str = Field(default="general")  # general, books, current_affairs
     subject: str | None = None
+    topic: str | None = None
     book_id: str | None = None
     question_count: int = Field(default=5, ge=5, le=20)
     difficulty: str = Field(default="Mixed")
@@ -128,6 +132,35 @@ class UnifiedTestsService:
                 } for question in questions],
                 "generated_at": quiz.created_at.isoformat(),
             }
+        if payload.source_type == "general":
+            subject = payload.subject or "General Studies"
+            topic_scope = f" focused on {payload.topic}" if payload.topic else ""
+            prompt = f"""Create {payload.question_count} original UPSC Prelims MCQs for {subject}{topic_scope} at {payload.difficulty} difficulty.
+Return one JSON object with key questions. Each question must have exactly: question, options, correct_answer, explanation, topic.
+Each options value must be an array of exactly four distinct concise strings. correct_answer must exactly equal one option.
+Use established UPSC knowledge. Do not include HTML, JavaScript, copied navigation text, or markdown fences."""
+            generate = getattr(self.llm, "generate_structured", None)
+            raw = asyncio.run(generate(prompt=prompt, mode="prelims", depth="standard") if callable(generate)
+                              else self.llm.generate(prompt=prompt, mode="prelims", depth="standard"))
+            match = re.search(r"\{.*\}", raw, re.S)
+            if not match: raise ValueError("The local model did not return a valid quiz structure.")
+            try: rows = json.loads(match.group()).get("questions", [])
+            except (json.JSONDecodeError, AttributeError): raise ValueError("The local model did not return a valid quiz structure.")
+            invalid = re.compile(r"<|>|javascript:|querySelector|addEventListener", re.I)
+            if len(rows) != payload.question_count: raise ValueError("The local model returned an incomplete quiz. Retry once.")
+            questions = []
+            for row in rows:
+                options = row.get("options") if isinstance(row, dict) else None
+                if not isinstance(options, list) or len(options) != 4 or len(set(options)) != 4 or row.get("correct_answer") not in options or invalid.search(str(row)):
+                    raise ValueError("The local model returned an invalid quiz structure.")
+                questions.append({"id": f"prelims_q_{uuid.uuid4().hex[:8]}", "question": row["question"], "options": options,
+                    "correct_answer": row["correct_answer"], "explanation": row["explanation"], "subject": subject,
+                    "topic": payload.topic or row.get("topic") or subject, "source_id": "general_upsc_knowledge", "source_type": "general",
+                    "source_title": "General UPSC knowledge"})
+            quiz_id = f"prelims_quiz_{uuid.uuid4().hex[:8]}"
+            self.activity.record_event("test_started", datetime.now(timezone.utc), user_id=user_id, subject=subject,
+                metadata_json={"quiz_id": quiz_id, "test_mode": "prelims", "source_type": "general", "total": payload.question_count})
+            return {"quiz_id": quiz_id, "questions": questions, "generated_at": datetime.now(timezone.utc).isoformat()}
         if payload.source_type != "books":
             raise ValueError("Unsupported source type for Prelims Quiz.")
 
@@ -220,14 +253,17 @@ class UnifiedTestsService:
         now = datetime.now(timezone.utc)
 
         if quiz_id.startswith("demo_"):
+            answered_count = 0
             for q in questions:
                 q_id = q["id"]
                 submitted = answers.get(q_id, "").strip()
+                answered_count += bool(submitted)
                 is_correct = submitted == q["correct_answer"].strip()
                 if is_correct:
                     correct_count += 1
                 results.append({
                     "question_id": q_id,
+                    "status": "answered" if submitted else "unanswered",
                     "correct": is_correct,
                     "submitted_answer": submitted,
                     "correct_answer": q["correct_answer"],
@@ -243,21 +279,29 @@ class UnifiedTestsService:
                 "quiz_id": quiz_id,
                 "score": correct_count,
                 "total": total,
+                "total_questions": total,
+                "answered_count": answered_count,
+                "unanswered_count": max(0, total - answered_count),
+                "correct_count": correct_count,
+                "incorrect_count": total - correct_count,
                 "percentage": percentage,
                 "results": results,
                 "breakdown": results,
                 "completed_at": now.isoformat()
             }
 
+        answered_count = 0
         for q in questions:
             q_id = q["id"]
             submitted = answers.get(q_id, "").strip()
+            answered_count += bool(submitted)
             is_correct = submitted == q["correct_answer"].strip()
             if is_correct:
                 correct_count += 1
 
             results.append({
                 "question_id": q_id,
+                "status": "answered" if submitted else "unanswered",
                 "correct": is_correct,
                 "submitted_answer": submitted,
                 "correct_answer": q["correct_answer"],
@@ -294,6 +338,11 @@ class UnifiedTestsService:
             "quiz_id": quiz_id,
             "score": correct_count,
             "total": total,
+            "total_questions": total,
+            "answered_count": answered_count,
+            "unanswered_count": max(0, total - answered_count),
+            "correct_count": correct_count,
+            "incorrect_count": total - correct_count,
             "percentage": percentage,
             "results": results,
             "completed_at": now.isoformat()

@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("startup")
 log.info("Settings load started")
 from src.core.config import settings
-log.info("Settings loaded: provider=%s model=%s", settings.LLM_PROVIDER, settings.OLLAMA_MODEL)
+log.info("Settings loaded: provider=%s model=%s", settings.LLM_PROVIDER, settings.OLLAMA_GENERATION_MODEL)
 log.info("Model imports and router registration started")
 from src.api.router import api_router
 log.info("Model imports and router registration finished")
@@ -48,16 +48,17 @@ def root():
 
 @app.get("/health")
 def health():
+    from src.ai.ollama_status import availability_status
     from src.rag.embeddings import EmbeddingService
     from src.rag.vector_store import VectorStore
-    embedding_status = EmbeddingService.health_status()
+    ollama_status = availability_status()
     return {
         "status": "ok",
         "database": "ready",
-        "ollama": "reachable" if embedding_status["ollama_reachable"] else "unreachable",
-        "embedding_provider": embedding_status["provider"],
-        "embedding_model": embedding_status["model"],
-        "embedding_model_available": embedding_status["model_available"],
+        "ollama": ollama_status.model_dump(),
+        "embedding_provider": settings.EMBEDDING_PROVIDER,
+        "embedding_model": settings.OLLAMA_EMBEDDING_MODEL,
+        "embedding_model_available": ollama_status.embedding_model_available,
         "embeddings": "available" if EmbeddingService.is_loaded() else "not_checked",
         "vector_store": "ready" if VectorStore.is_initialized() else "not_initialized",
     }

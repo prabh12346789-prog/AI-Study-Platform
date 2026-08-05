@@ -11,5 +11,6 @@ def get_llm() -> BaseLLM:
         return DummyLLM()
 
     return OllamaLLM(
-        model_name=settings.OLLAMA_MODEL,
+        model_name=settings.OLLAMA_GENERATION_MODEL,
+        base_url=settings.OLLAMA_BASE_URL,
     )

@@ -9,7 +9,8 @@ import { UpscBooksPage } from './UpscBooksPage'
 import { useActiveStudyTracker } from './useActiveStudyTracker'
 import { AppPage, AppShell } from './AppShell'
 import { TestsPage } from './TestsPage'
-import { LibraryPage, ProfilePage, ProgressPage, QuizzesPage, RevisionPage } from './StudyHubPages'
+import { LibraryPage, ProfilePage, QuizzesPage } from './StudyHubPages'
+import { ProgressAnalyticsPage, RevisionCenterPage } from './PhaseThreePages'
 import { AssistantPanel, ConversationRail, SourceDisclosure } from './ChatPanels'
 import {
   API_BASE_URL,
@@ -108,6 +109,14 @@ export default function App() {
     if (page as string === 'upsc_notes') {
       setPage('upsc_books')
     }
+  }, [page])
+
+  useEffect(() => {
+    if (page !== 'chat') return
+    const draft = sessionStorage.getItem('upsc-coach-draft')
+    if (!draft) return
+    sessionStorage.removeItem('upsc-coach-draft')
+    setQuestion(draft)
   }, [page])
   async function refreshConversations() {
     setConversations(await listConversations())
@@ -379,10 +388,10 @@ export default function App() {
         {page === 'current_affairs' && <CurrentAffairsPage onNavigate={setPage} />}
         {page === 'upsc_books' && <UpscBooksPage onNavigate={setPage} />}
         {page === 'library' && <LibraryPage onUpload={() => fileRef.current?.click()} uploadState={uploadState} refreshKey={libraryRevision} onAsk={askAboutDocument} onVisual={() => setPage('visual')} />}
-        {page === 'revision' && <RevisionPage trackingActive={trackingActive} />}
+        {page === 'revision' && <RevisionCenterPage onNavigate={setPage} />}
         {page === 'quizzes' && <QuizzesPage onNavigate={setPage} />}
         {page === 'tests' && <TestsPage />}
-        {page === 'progress' && <ProgressPage trackingActive={trackingActive} />}
+        {page === 'progress' && <ProgressAnalyticsPage />}
         {page === 'profile' && <ProfilePage />}
         {page === 'settings' && <ProfilePage settings />}
         {page === 'dashboard' && <div className="dashboard-page">
@@ -424,6 +433,14 @@ export default function App() {
         </div>
 
         <div className="chat-workspace-grid"><ConversationRail conversations={conversations} activeId={conversationId} onNew={() => void newChat()} onSelect={id => void selectConversation(id)} onRename={item => void renameChat(item)} onDelete={id => void removeChat(id)} /><div className="chat-body"><section className="message-list chat-messages" aria-live="polite">
+          {messages.length <= 1 && <section className="coach-starter"><p className="eyebrow">Start a focused session</p><h2>What would you like to study today?</h2><p>Choose a learning goal or write your own UPSC question below.</p><div>{[
+            ['Understand a Topic', 'Explain Fundamental Rights for UPSC Mains.'],
+            ['Prepare for Prelims', 'Create a Prelims revision checklist for modern history.'],
+            ['Write a Mains Answer', 'Give me a Mains question on federalism and help structure the answer.'],
+            ['Revise a Weak Area', 'Help me revise a weak topic using active recall.'],
+            ['Study Current Affairs', 'Summarize today’s important Current Affairs for UPSC.'],
+            ['Ask from a PDF', 'Explain the key concepts from my uploaded PDF.'],
+          ].map(([label, prompt]) => <button type="button" key={label} onClick={() => label === 'Ask from a PDF' ? fileRef.current?.click() : setQuestion(prompt)}><strong>{label}</strong><small>{prompt}</small></button>)}</div></section>}
           {messages.map((message) => (
             <article key={message.id} className={`message-row ${message.role}`}>
               <div className="avatar">{message.role === 'user' ? 'You' : 'AI'}</div>
@@ -445,12 +462,13 @@ export default function App() {
                 )}
                 {message.adaptation && <small className="adaptation-label">{message.adaptation.language} · {message.adaptation.depth} · {message.adaptation.format}</small>}
                 <SourceDisclosure sources={message.sources} />
+                {message.role === 'assistant' && message.content && <div className="message-actions"><button type="button" onClick={() => void navigator.clipboard.writeText(message.content)}>Copy response</button></div>}
                 {message.error && message.retryQuestion && <button className="icon-button retry-message" onClick={() => void submitQuestion(undefined, message.retryQuestion)}>Retry question</button>}
               </div>
             </article>
           ))}
           <div ref={bottomRef} />
-        </section></div><AssistantPanel subject={activeSubject} topic={activeTopic} uploadState={uploadState} onNavigate={setPage} onUpload={() => fileRef.current?.click()} onQuestion={setQuestion} /></div>
+        </section></div><AssistantPanel subject={activeSubject} topic={activeTopic} mode={selectedMode.label} uploadState={uploadState} onNavigate={setPage} onUpload={() => fileRef.current?.click()} onQuestion={setQuestion} /></div>
 
         {videoRequested && <VideoRecommendations subject={activeSubject} topic={activeTopic} explicitRequest />}
 

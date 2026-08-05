@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from src.schemas.visual_roadmap import RoadmapStructure, VisualRoadmapCreate
 from src.schemas.roadmap_quiz import QuizCreate, QuizResponse, QuizResult, QuizSubmission
 from src.visual_roadmap.quiz_service import RoadmapQuizService
-from src.visual_roadmap.service import InsufficientContextError, VisualRoadmapService
+from src.visual_roadmap.service import InsufficientContextError, RoadmapGenerationError, VisualRoadmapService
 
 router = APIRouter()
 
@@ -50,6 +50,10 @@ def submit_quiz(roadmap_id: str, payload: QuizSubmission):
 async def create_roadmap(payload: VisualRoadmapCreate):
     try: return response(await service().create(payload))
     except InsufficientContextError as error: raise HTTPException(status_code=422, detail={"code": "insufficient_context", "message": str(error)}) from error
+    except RoadmapGenerationError as error: raise HTTPException(status_code=422, detail={
+        "code": error.code, "message": str(error), "model": error.model,
+        "action": f"ollama pull {error.model}" if error.code == "generation_model_missing" and error.model else None,
+    }) from error
     except ValueError as error: raise HTTPException(status_code=422, detail=str(error)) from error
 
 

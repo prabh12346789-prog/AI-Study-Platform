@@ -14,6 +14,8 @@ from sqlalchemy import select
 from src.activity.manager import ActivityManager
 from src.activity.taxonomy import SubjectTopicClassifier
 from src.ai.factory import get_llm
+from src.ai.ollama_status import availability_status
+from src.ai.providers.ollama import OllamaLLM
 from src.memory.manager import MemoryManager
 from src.memory.storage import get_session_factory
 from src.rag.retriever import Retriever
@@ -25,7 +27,11 @@ from src.visual_roadmap.renderer import render_svg
 
 
 class InsufficientContextError(ValueError): pass
-class RoadmapGenerationError(ValueError): pass
+class RoadmapGenerationError(ValueError):
+    def __init__(self, message: str, code: str = "generation_failed", model: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.model = model
 
 
 class VisualRoadmapService:
@@ -117,6 +123,8 @@ class VisualRoadmapService:
 
     @classmethod
     def _json(cls, text: str):
+        if re.search(r"<\s*(?:script|html)|javascript:", text, re.I):
+            raise ValueError("Model output contained unsafe markup")
         cleaned = re.sub(r"```(?:json)?", "", text.strip(), flags=re.I).replace("```", "")
         candidate = cls._first_json_object(cleaned)
         candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
@@ -142,13 +150,24 @@ class VisualRoadmapService:
             "sources": sources,
         }
 
+    @staticmethod
+    def _general_source() -> list[dict]:
+        return [{"id": "source_1", "source_type": "general", "document": None,
+                 "title": "General UPSC knowledge", "url": None, "publisher": None,
+                 "domain": None, "retrieved_at": None, "source_category": "general",
+                 "trust_level": "general_knowledge", "page_start": None, "page_end": None,
+                 "chunk_id": None}]
+
     @classmethod
     def _prompt(cls, request: VisualRoadmapCreate, sources: list[dict], context: str) -> str:
         example = cls._example(request.visual_type, sources)
-        return f"""Create one UPSC visual roadmap using ONLY the supplied grounded context.
+        knowledge_rule = ("Use established general UPSC knowledge. Do not invent disputed details, citations, or precise facts you are unsure about."
+                          if request.source_type == "general" else "Use ONLY the supplied grounded context.")
+        return f"""Create one UPSC visual roadmap. {knowledge_rule}
 Return exactly one JSON object. Do not use Markdown fences. Do not write any explanation before or after JSON.
 Visual type must be exactly: {request.visual_type}
 Language: {request.language}
+Detail level: {request.detail_level}
 Topic: {request.topic}
 
 The object must contain exactly these keys:
@@ -185,10 +204,20 @@ Grounded context:
         structure = RoadmapStructure.model_validate(data)
         if structure.visual_type != request.visual_type:
             raise ValueError("Generated visual type does not match request")
+        if structure.visual_type == "timeline":
+            years = [int(match.group()) for node in structure.nodes if node.year and (match := re.search(r"\d{3,4}", node.year))]
+            if years != sorted(years):
+                raise ValueError("Timeline nodes must be in chronological order")
         allowed = {source["id"] for source in sources}
         if {source.id for source in structure.sources} != allowed:
             raise ValueError("Roadmap contains unsupported source IDs")
         return structure
+
+    async def _model_json(self, prompt: str, depth: str) -> str:
+        structured = getattr(self.llm, "generate_structured", None)
+        if callable(structured):
+            return await structured(prompt=prompt, mode="learn", depth=depth)
+        return await self.llm.generate(prompt=prompt, mode="learn", depth=depth)
 
     @staticmethod
     def _facts(text: str) -> list[str]:
@@ -229,18 +258,37 @@ Grounded context:
         if request.conversation_id and not MemoryManager().get_conversation(request.conversation_id):
             raise ValueError("Conversation not found")
         classification = self.classifier.classify(request.topic)
-        search_result = await asyncio.to_thread(self.search_provider.search, request.topic, "roadmap")
-        chunks = search_result.get("chunks", [])
-        grounding = search_result.get("grounding", {})
-        if grounding.get("status") != "sufficient" or not chunks:
-            raise InsufficientContextError("Insufficient trusted context. Upload a relevant PDF, enable/configure trusted web search, or choose another topic; no roadmap was generated.")
-        sources = self._sources(chunks)
-        context = "\n\n".join(f"[{sources[i]['id']}] {c['text']}" for i, c in enumerate(chunks))
+        chunks = []
+        if request.source_type == "general":
+            sources = self._general_source()
+            context = "General UPSC knowledge requested by the learner."
+        else:
+            search_result = await asyncio.to_thread(self.search_provider.search, request.topic, "roadmap")
+            chunks = search_result.get("chunks", [])
+            grounding = search_result.get("grounding", {})
+            if grounding.get("status") != "sufficient" or not chunks:
+                raise InsufficientContextError("Insufficient trusted context for the selected source. Upload a relevant PDF, select indexed material, or choose General source; no roadmap was generated.")
+            sources = self._sources(chunks)
+            context = "\n\n".join(f"[{sources[i]['id']}] {c['text']}" for i, c in enumerate(chunks))
         prompt = self._prompt(request, sources, context)
+        if isinstance(self.llm, OllamaLLM):
+            model_status = await asyncio.to_thread(availability_status)
+            if not model_status.reachable:
+                message = ("Local AI service timed out. Start Ollama and retry." if model_status.error_code == "ollama_timeout"
+                           else "Local AI service is not running. Start Ollama and retry.")
+                raise RoadmapGenerationError(message, model_status.error_code or "ollama_unavailable", model_status.generation_model)
+            if not model_status.generation_model_available:
+                raise RoadmapGenerationError(
+                    f"The configured model '{model_status.generation_model}' is not installed.",
+                    "generation_model_missing", model_status.generation_model,
+                )
         try:
-            raw = await self.llm.generate(prompt=prompt, mode="learn", depth="standard")
+            raw = await self._model_json(prompt, request.detail_level)
         except Exception as error:
-            raise RoadmapGenerationError("Roadmap generation model is unavailable. Confirm Ollama and the configured model are installed.") from error
+            error_name = type(error).__name__.casefold()
+            if "timeout" in error_name:
+                raise RoadmapGenerationError("The local model request timed out. Retry after the model finishes loading.", "generation_timeout") from error
+            raise RoadmapGenerationError("The local model is unavailable after generation started.", "generation_failed") from error
         generation_method = "model"
         try:
             structure = self._validate_structure(self._json(raw), request, sources)
@@ -254,10 +302,12 @@ Do not add or change facts. Validation error: {first_error}
 Malformed output:
 {raw}"""
             try:
-                repaired = await self.llm.generate(prompt=repair, mode="learn", depth="quick")
+                repaired = await self._model_json(repair, "quick")
                 structure = self._validate_structure(self._json(repaired), request, sources)
                 generation_method = "model_repair"
             except Exception:
+                if request.source_type == "general":
+                    raise RoadmapGenerationError("The local model did not return a valid visual structure. Retry with a narrower topic.")
                 structure = self._fallback(request, chunks, sources)
                 generation_method = "deterministic_fallback"
         roadmap_id = str(uuid.uuid4()); directory = self._directory(user_id, roadmap_id); directory.mkdir(parents=True)

@@ -1,8 +1,41 @@
+import json
 import pytest
 from fastapi.testclient import TestClient
 from src.main import app
+from src.tests_engine.service import PrelimsQuizCreate, UnifiedTestsService
 
 client = TestClient(app)
+
+
+class _GeneralQuizLLM:
+    async def generate_structured(self, **_kwargs):
+        return json.dumps({"questions": [{
+            "question": f"Verified question {index + 1}?",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correct_answer": "Option A",
+            "explanation": "Option A is the established answer.",
+            "topic": "Constitution",
+        } for index in range(5)]})
+
+
+class _InvalidGeneralQuizLLM:
+    async def generate_structured(self, **_kwargs):
+        return "not JSON"
+
+
+class _EventRecorder:
+    def __init__(self):
+        self.events = []
+
+    def record_event(self, *args, **kwargs):
+        self.events.append((args, kwargs))
+
+
+def _general_service(llm):
+    service = UnifiedTestsService.__new__(UnifiedTestsService)
+    service.llm = llm
+    service.activity = _EventRecorder()
+    return service
 
 
 # ─── SOURCES AVAILABILITY ────────────────────────────────────────────────────
@@ -37,6 +70,24 @@ def test_books_unavailable_message_present_when_empty():
 
 
 # ─── PRELIMS QUIZ GENERATION ─────────────────────────────────────────────────
+
+def test_prelims_general_subject_generation_needs_no_books():
+    service = _general_service(_GeneralQuizLLM())
+    result = service.generate_prelims_quiz(PrelimsQuizCreate(
+        source_type="general", subject="Indian Polity", topic="Fundamental Rights", question_count=5))
+
+    assert len(result["questions"]) == 5
+    assert all(question["source_type"] == "general" for question in result["questions"])
+    assert all(question["subject"] == "Indian Polity" for question in result["questions"])
+    assert all(question["topic"] == "Fundamental Rights" for question in result["questions"])
+    assert len(service.activity.events) == 1
+
+
+def test_prelims_general_subject_rejects_unstructured_model_output():
+    service = _general_service(_InvalidGeneralQuizLLM())
+    with pytest.raises(ValueError, match="valid quiz structure"):
+        service.generate_prelims_quiz(PrelimsQuizCreate(source_type="general", question_count=5))
+
 
 def test_prelims_generate_books_succeeds():
     res = client.post("/tests/prelims/generate", json={

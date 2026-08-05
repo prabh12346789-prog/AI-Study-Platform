@@ -12,8 +12,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     LLM_PROVIDER: str = "ollama"
-    OLLAMA_MODEL: str = "qwen3:8b"
+    OLLAMA_GENERATION_MODEL: str = "qwen2.5:3b"
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    OLLAMA_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    OLLAMA_GENERATION_TIMEOUT_SECONDS: float = 180.0
     EMBEDDING_PROVIDER: str = "ollama"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OLLAMA_EMBEDDING_TIMEOUT_SECONDS: float = 60.0
@@ -62,6 +64,11 @@ class Settings(BaseSettings):
             if normalized in {"release", "production", "prod"}: return False
             if normalized in {"development", "dev"}: return True
         return value
+
+    @field_validator("OLLAMA_BASE_URL", "OLLAMA_GENERATION_MODEL", "OLLAMA_EMBEDDING_MODEL", mode="before")
+    @classmethod
+    def normalize_ollama_setting(cls, value):
+        return value.strip().strip('"\'') if isinstance(value, str) else value
 
     model_config = SettingsConfigDict(
         env_file=".env",

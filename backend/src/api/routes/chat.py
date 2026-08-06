@@ -1,6 +1,7 @@
 import json
 from functools import lru_cache
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -8,6 +9,10 @@ from src.schemas.chat import ChatRequest, ChatResponse
 from src.services.orchestrator.service import AIOrchestrator, ConversationEvent
 
 router = APIRouter()
+
+MODEL_UNAVAILABLE_DETAIL = (
+    "The local AI model is unavailable. Start Ollama and confirm qwen2.5:3b is installed, then try again."
+)
 
 @lru_cache(maxsize=1)
 def get_orchestrator() -> AIOrchestrator:
@@ -35,6 +40,8 @@ async def chat(request: ChatRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (httpx.HTTPError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=MODEL_UNAVAILABLE_DETAIL) from exc
     print("[chat] after AIOrchestrator.process()", flush=True)
     return response
 
@@ -71,6 +78,8 @@ async def chat_stream(request: ChatRequest):
             yield "event: done\n" + _format_sse_data('{"status":"complete"}')
         except ValueError as exc:
             yield "event: error\n" + _format_sse_data(json.dumps({"detail": str(exc)}))
+        except (httpx.HTTPError, OSError):
+            yield "event: error\n" + _format_sse_data(json.dumps({"detail": MODEL_UNAVAILABLE_DETAIL}))
 
         # Closing the SSE response is the completion signal.  Do not append a
         # sentinel token: clients otherwise render it as part of the answer.

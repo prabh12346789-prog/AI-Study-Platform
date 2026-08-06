@@ -39,14 +39,15 @@ def list_events(
 
 @router.get("/summary", response_model=ActivitySummary)
 def activity_summary(
-    period: Literal["today", "7d"] = "today",
+    period: Literal["today", "7d", "30d", "90d", "1y", "all"] = "today",
     date_from: datetime | None = None,
     date_to: datetime | None = None,
 ):
     now = datetime.now(timezone.utc)
     start = date_from
     if start is None:
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0) if period == "today" else now - timedelta(days=7)
+        days = {"7d": 7, "30d": 30, "90d": 90, "1y": 365, "all": 36500}
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0) if period == "today" else now - timedelta(days=days[period])
     return store.summarize(date_from=start, date_to=date_to or now)
 
 

@@ -102,10 +102,15 @@ type TestPhase = 'config' | 'active' | 'result'
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+    })
+  } catch {
+    throw new Error(`Cannot reach the Tests backend at ${API}. Start the FastAPI server and try again.`)
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail ?? 'Request failed')

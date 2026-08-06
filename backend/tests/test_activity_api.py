@@ -54,3 +54,21 @@ def test_historical_removed_event_type_remains_readable_but_not_in_summary(tmp_p
     assert summary["subjects_studied"] == 0
     assert summary["top_subject"] is None
     assert summary["top_topic"] is None
+
+
+def test_activity_api_accepts_internal_search_and_90_day_period(tmp_path, monkeypatch):
+    monkeypatch.setattr(activity, "store", ActivityManager(str(tmp_path / "searches.sqlite3")))
+    client = TestClient(app)
+    created = client.post("/activity/events", json={
+        "event_type": "internal_search", "subject": "Current Affairs",
+        "topic": "monetary policy", "metadata": {"page": "current_affairs"},
+    })
+    assert created.status_code == 201
+    summary = client.get("/activity/summary?period=90d")
+    assert summary.status_code == 200
+    assert summary.json()["searches_made"] == 1
+    assert summary.json()["top_searches"] == ["monetary policy"]
+    lifetime = client.get("/activity/summary?period=all")
+    assert lifetime.status_code == 200
+    assert lifetime.json()["total_learning_days"] == 1
+    assert lifetime.json()["monthly_breakdown"][0]["searches_made"] == 1

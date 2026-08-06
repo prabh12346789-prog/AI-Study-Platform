@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { ArrowLeftRight, Download, Expand, GitBranch, ListOrdered, Network, RefreshCcw, Route, Save, Sparkles, Timer, Trash2 } from 'lucide-react'
-import { API_BASE_URL, createVisualRoadmap, deleteVisualRoadmap, listVisualRoadmaps, saveVisualRoadmap, VisualRoadmap, VisualRoadmapApiError, VisualType } from './api'
+import { API_BASE_URL, createVisualRoadmap, deleteVisualRoadmap, listVisualRoadmaps, recordActivityEvent, saveVisualRoadmap, VisualRoadmap, VisualRoadmapApiError, VisualType } from './api'
 import { RoadmapQuizPanel } from './RoadmapQuizPanel'
 import { EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from './PhaseTwoUI'
 import { VISUAL_PREVIEW_STEPS } from './phaseTwoFallback'
@@ -44,6 +44,7 @@ export function VisualLearningPage({ onAsk }: { onAsk: (question: string) => voi
       setLoading(false); return
     }
     const groundedTopic = `${topic.trim()}${subject.trim() ? ` — ${subject.trim()}` : ''}`
+    void recordActivityEvent({ event_type: 'internal_search', subject: subject.trim() || 'Visual Learning', topic: topic.trim(), duration_seconds: 0, metadata: { page: 'visual', visual_type: visualType, source_type: source } }).catch(() => undefined)
     try { const result = await createVisualRoadmap({ topic: groundedTopic, visual_type: visualType, language, detail_level: detail, source_type: 'general', conversation_id: null }); setRoadmap(result); await loadHistory() }
     catch (reason) { setError(reason instanceof VisualRoadmapApiError && reason.action ? `${reason.message} Developer action: ${reason.action}` : reason instanceof Error ? reason.message : 'Visual generation failed. Retry when the local AI service is available.') }
     finally { setLoading(false) }

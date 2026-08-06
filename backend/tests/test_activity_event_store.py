@@ -85,3 +85,19 @@ def test_today_and_seven_day_summary_breakdowns(tmp_path):
     assert today["subject_breakdown"][0]["study_seconds"] == 600
     assert seven_days["total_study_seconds"] == 900
     assert seven_days["subjects_studied"] == 2
+
+
+def test_internal_searches_and_daily_history_are_summarized(tmp_path):
+    store = ActivityManager(str(tmp_path / "activity.sqlite3"))
+    now = datetime.now(timezone.utc)
+    store.record_event("internal_search", now, subject="UPSC Books", topic="fundamental rights", metadata_json={"page": "upsc_books"})
+    store.record_event("internal_search", now - timedelta(days=20), subject="Current Affairs", topic="inflation", metadata_json={"page": "current_affairs"})
+    store.record_event("study_time_logged", now, duration_seconds=420, subject="Polity", topic="Rights")
+
+    summary = store.summarize(date_from=now - timedelta(days=90), date_to=now)
+    assert summary["searches_made"] == 2
+    assert summary["top_searches"] == ["fundamental rights", "inflation"]
+    assert summary["daily_breakdown"][-1]["study_seconds"] == 420
+    assert summary["total_learning_days"] == 2
+    assert summary["first_activity_at"] == now - timedelta(days=20)
+    assert summary["monthly_breakdown"][-1]["searches_made"] == 1

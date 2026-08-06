@@ -24,6 +24,7 @@ from src.current_affairs.service import CurrentAffairsService
 from src.current_affairs.quiz_service import CurrentAffairsQuizService
 from src.schemas.current_affairs_quiz import QuizCreate, QuizAnswer
 from sqlalchemy import select
+from scripts.seed_long_term_history import seed_long_term_history
 
 
 def seed_demo(db_path: str) -> dict:
@@ -77,6 +78,7 @@ def seed_demo(db_path: str) -> dict:
     actions = engine.generate_actions()
     overview = mastery.get_mastery_overview()
     video_matches = videos.recommend(subject="Polity and Governance", topic="Fundamental Rights", language="english", explicit_request=True)
+    history = seed_long_term_history(db_path)
     result = {
         "database": str(Path(db_path).resolve()),
         "strong_topic": overview["strong_topics"][0].topic if overview["strong_topics"] else None,
@@ -90,6 +92,7 @@ def seed_demo(db_path: str) -> dict:
         "visual_roadmap": roadmap_id, "roadmap_quiz_result": roadmap_quiz_id,
         "current_affairs_articles": len(CurrentAffairsService(db_path=db_path, llm=object(), indexer=lambda *_: None).list_articles(date_value=today)),
         "current_affairs_quiz_attempts": len(ca_quiz.attempts()), "high_risk_current_affairs": len(ca_quiz.overview()["high_risk_articles"]),
+        "long_term_history": history,
     }
     return result
 

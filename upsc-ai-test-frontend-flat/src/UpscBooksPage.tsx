@@ -8,6 +8,7 @@ import {
 import type { AppPage } from './AppShell'
 import { ContentBlocks, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from './PhaseTwoUI'
 import { BOOK_PREVIEW_CARDS, BOOK_PREVIEW_SUBJECTS } from './phaseTwoFallback'
+import { useInternalSearchTracking } from './useInternalSearchTracking'
 
 type Section = 'prelims' | 'mains'
 
@@ -42,6 +43,7 @@ export function UpscBooksPage({ onNavigate }: { onNavigate: (page: AppPage) => v
   const [readerTab, setReaderTab] = useState<'material' | 'pdf'>('material')
   const [readerLoading, setReaderLoading] = useState(false)
   const [progress, setProgress] = useState(0)
+  useInternalSearchTracking(search, 'upsc_books', `${section === 'prelims' ? 'Prelims' : 'Mains'} Books`)
 
   async function load() {
     setLoading(true); setError('')

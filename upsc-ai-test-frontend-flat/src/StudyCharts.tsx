@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Area, AreaChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, Cell, Label, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { ActivityBreakdown, ActivitySummary, TopicMastery } from './api'
 
 const COLORS = ['#7c6ee6', '#38bdf8', '#fbbf24', '#4ade80', '#fb7185', '#a78bfa']
@@ -33,10 +33,10 @@ function formatDayLabel(value: string) {
   return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })
 }
 
-export function extractDailyTrend(summary: ActivitySummary): DailyStudyPoint[] {
+export function extractDailyTrend(summary: ActivitySummary, days = 7): DailyStudyPoint[] {
   const raw = (summary as any).daily_breakdown ?? (summary as any).daily_activity ?? (summary as any).history ?? null
   const last7Days: DailyStudyPoint[] = []
-  for (let i = 6; i >= 0; i--) {
+  for (let i = days - 1; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
     const dateStr = d.toISOString().slice(0, 10)
@@ -87,6 +87,9 @@ export function buildRiskDistribution(topics: TopicMastery[]) {
 
 export function StudyTrendChart({ data }: { data: DailyStudyPoint[] }) {
   const allZero = data.every((point) => point.study_seconds === 0)
+  const total = data.reduce((sum, point) => sum + point.study_seconds, 0)
+  const activeDays = data.filter(point => point.study_seconds > 0).length
+  const bestDay = [...data].sort((a, b) => b.study_seconds - a.study_seconds)[0]
   return (
     <div className="chart-card study-trend-card">
       <div className="chart-header"><h2>Study Progress</h2><p>{allZero ? 'No study minutes were recorded on these days.' : 'Your study time across the most recent days.'}</p></div>
@@ -96,13 +99,19 @@ export function StudyTrendChart({ data }: { data: DailyStudyPoint[] }) {
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={data} margin={{ top: 8, right: 10, left: -10, bottom: 10 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} axisLine={false} tickLine={false} />
+            <XAxis dataKey="label" interval={data.length > 31 ? 13 : data.length > 7 ? 4 : 0} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tickFormatter={(value) => `${Math.round(value / 60)}m`} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} axisLine={false} tickLine={false} />
             <Tooltip formatter={(value: any) => formatStudyDuration(Number(value || 0))} labelFormatter={(label: any) => `Day: ${String(label)}`} contentStyle={{ background: 'rgba(8, 13, 23, 0.92)', border: '1px solid rgba(157, 174, 207, .12)', color: '#eef3fb' }} />
             <Area type="monotone" dataKey="study_seconds" stroke="#7c6ee6" fill="rgba(124, 110, 230, 0.22)" fillOpacity={1} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
           </AreaChart>
         </ResponsiveContainer>
       )}
+      <div className="chart-detail-strip" aria-label="Study trend summary">
+        <span><small>7-day total</small><strong>{formatStudyHours(total)}</strong></span>
+        <span><small>Daily average</small><strong>{formatStudyDuration(data.length ? Math.round(total / data.length) : 0)}</strong></span>
+        <span><small>Active days</small><strong>{activeDays} of {data.length}</strong></span>
+        <span><small>Best day</small><strong>{bestDay?.study_seconds ? `${bestDay.label} · ${formatStudyDuration(bestDay.study_seconds)}` : 'No activity yet'}</strong></span>
+      </div>
       <p className="sr-only">Study progress chart showing study duration for each day. Exact values are available in the tooltip.</p>
     </div>
   )
@@ -114,6 +123,7 @@ function donutTooltip(value: any, name: any): [string, string] {
 
 export function SubjectDonutChart({ breakdown }: { breakdown: ActivityBreakdown[] }) {
   const { total, slices } = prepareSubjectDonut(breakdown)
+  const leadingSubject = slices[0]
   return (
     <div className="chart-card donut-card">
       <div className="chart-header"><h2>Subject time distribution</h2><p>Total weekly study: {formatStudyDuration(total)}</p></div>
@@ -123,6 +133,7 @@ export function SubjectDonutChart({ breakdown }: { breakdown: ActivityBreakdown[
         <ResponsiveContainer width="100%" height={280}>
           <PieChart>
             <Pie data={slices} dataKey="study_seconds" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={3} cornerRadius={8}>
+              <Label value={formatStudyHours(total)} position="center" fill="#f2f5ff" fontSize={16} fontWeight={700} />
               {slices.map((entry, index) => (
                 <Cell key={entry.name} fill={entry.color} />
               ))}
@@ -132,6 +143,11 @@ export function SubjectDonutChart({ breakdown }: { breakdown: ActivityBreakdown[
           </PieChart>
         </ResponsiveContainer>
       )}
+      <div className="chart-detail-strip subject-detail-strip" aria-label="Subject study summary">
+        <span><small>Subjects covered</small><strong>{slices.length}</strong></span>
+        <span><small>Most studied</small><strong>{leadingSubject?.name ?? 'No activity yet'}</strong></span>
+        <span><small>Share of time</small><strong>{leadingSubject && total ? `${Math.round(leadingSubject.study_seconds / total * 100)}%` : '—'}</strong></span>
+      </div>
     </div>
   )
 }

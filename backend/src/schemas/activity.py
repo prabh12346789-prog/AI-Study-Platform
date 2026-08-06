@@ -8,6 +8,7 @@ ActivityEventType = Literal[
     "revision_completed", "video_opened", "recommendation_accepted",
     "recommendation_skipped",
     "study_time_logged",
+    "internal_search",
     "current_affairs_quiz_started", "current_affairs_quiz_completed", "current_affairs_revision_completed",
     "test_started", "prelims_test_completed", "current_affairs_test_completed",
     "mains_question_generated", "mains_answer_submitted", "mains_evaluation_completed"
@@ -52,11 +53,23 @@ class DailyBreakdown(BaseModel):
     event_count: int
 
 
+class MonthlyBreakdown(BaseModel):
+    month: str
+    study_seconds: int
+    event_count: int
+    searches_made: int
+    questions_asked: int
+
+
 class ActivitySummary(BaseModel):
     total_study_seconds: int
     questions_asked: int
     answers_generated: int
     pdfs_uploaded: int
+    searches_made: int = 0
+    top_searches: list[str] = Field(default_factory=list)
+    first_activity_at: datetime | None = None
+    total_learning_days: int = 0
     subjects_studied: int
     top_subject: str | None
     top_topic: str | None
@@ -64,4 +77,5 @@ class ActivitySummary(BaseModel):
     topic_breakdown: list[ActivityBreakdown]
     recent_events: list[ActivityEventResponse]
     daily_breakdown: list[DailyBreakdown] = Field(default_factory=list)
+    monthly_breakdown: list[MonthlyBreakdown] = Field(default_factory=list)
     demo_mode: bool = False

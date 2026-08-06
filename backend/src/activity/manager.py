@@ -13,6 +13,7 @@ SUPPORTED_EVENT_TYPES = {
     "revision_completed", "video_opened", "recommendation_accepted",
     "recommendation_skipped",
     "study_time_logged",
+    "internal_search",
     "visual_roadmap_generated", "visual_roadmap_opened", "visual_roadmap_saved",
     "roadmap_quiz_started", "roadmap_quiz_completed",
     "current_affairs_opened", "current_affairs_saved", "daily_brief_completed",
@@ -59,6 +60,8 @@ class ActivityManager:
             raise ValueError(f"Unsupported activity event type: {event_type}")
         if event_type == "study_time_logged" and (duration_seconds is None or duration_seconds <= 0):
             raise ValueError("study_time_logged requires duration_seconds greater than zero")
+        if event_type == "internal_search" and not (topic or "").strip():
+            raise ValueError("internal_search requires the platform search term in topic")
         event = ActivityEvent(
             id=str(uuid.uuid4()),
             event_type=event_type,
@@ -126,6 +129,9 @@ class ActivityManager:
         topic_counts: Counter[str] = Counter()
         subject_seconds: defaultdict[str, int] = defaultdict(int)
         topic_seconds: defaultdict[str, int] = defaultdict(int)
+        daily: defaultdict[str, dict[str, int]] = defaultdict(lambda: {"study_seconds": 0, "event_count": 0})
+        monthly: defaultdict[str, dict[str, int]] = defaultdict(lambda: {"study_seconds": 0, "event_count": 0, "searches_made": 0, "questions_asked": 0})
+        search_counts: Counter[str] = Counter()
         for event in events:
             # Historical rows may contain event names from removed features. Keep
             # them readable, but never let them affect active learning progress.
@@ -135,11 +141,22 @@ class ActivityManager:
                 subject_counts[event.subject] += 1
             if event.topic:
                 topic_counts[event.topic] += 1
+            day = event.occurred_at.date().isoformat()
+            month = event.occurred_at.strftime("%Y-%m")
+            daily[day]["event_count"] += 1
+            monthly[month]["event_count"] += 1
             if event.event_type == "study_time_logged" and event.duration_seconds:
+                daily[day]["study_seconds"] += event.duration_seconds
+                monthly[month]["study_seconds"] += event.duration_seconds
                 if event.subject:
                     subject_seconds[event.subject] += event.duration_seconds
                 if event.topic:
                     topic_seconds[event.topic] += event.duration_seconds
+            if event.event_type == "internal_search" and event.topic:
+                search_counts[event.topic.strip()] += 1
+                monthly[month]["searches_made"] += 1
+            if event.event_type == "question_asked":
+                monthly[month]["questions_asked"] += 1
 
         def breakdown(counts: Counter[str], seconds: dict[str, int]) -> list[dict]:
             return [
@@ -154,12 +171,22 @@ class ActivityManager:
             "questions_asked": sum(event.event_type == "question_asked" for event in events),
             "answers_generated": sum(event.event_type == "answer_generated" for event in events),
             "pdfs_uploaded": sum(event.event_type == "pdf_uploaded" for event in events),
+            "searches_made": sum(event.event_type == "internal_search" for event in events),
+            "top_searches": [term for term, _count in search_counts.most_common(10)],
+            "first_activity_at": min((event.occurred_at for event in events), default=None),
+            "total_learning_days": len(daily),
             "subjects_studied": len(subject_counts),
             "top_subject": subject_counts.most_common(1)[0][0] if subject_counts else None,
             "top_topic": topic_counts.most_common(1)[0][0] if topic_counts else None,
             "subject_breakdown": breakdown(subject_counts, subject_seconds),
             "topic_breakdown": breakdown(topic_counts, topic_seconds),
             "recent_events": events[:10],
+            "daily_breakdown": [
+                {"date": day, **values} for day, values in sorted(daily.items())
+            ],
+            "monthly_breakdown": [
+                {"month": month, **values} for month, values in sorted(monthly.items())
+            ],
         }
 
 

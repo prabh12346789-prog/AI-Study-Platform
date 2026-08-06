@@ -8,6 +8,7 @@ import {
 } from './api'
 import type { AppPage } from './AppShell'
 import { ContentBlocks, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from './PhaseTwoUI'
+import { useInternalSearchTracking } from './useInternalSearchTracking'
 
 const SOURCES = ['All', 'PIB', 'RBI', 'MEA'] as const
 const today = () => new Date().toISOString().slice(0, 10)
@@ -40,6 +41,7 @@ export function CurrentAffairsPage({ onNavigate }: { onNavigate: (page: AppPage)
   const requestSequence = useRef(0)
   const articlesRef = useRef<HTMLDivElement | null>(null)
   const scrollAfterLoad = useRef(false)
+  useInternalSearchTracking(search, 'current_affairs', 'Current Affairs')
 
   async function loadMetadata() {
     const [dateData, statusData] = await Promise.all([getCurrentAffairsDates(), getCurrentAffairsSyncStatus().catch(() => null)])

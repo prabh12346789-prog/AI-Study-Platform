@@ -1,5 +1,6 @@
 import { ReactNode, useMemo, useState } from 'react'
 import { Bell, BookOpen, BrainCircuit, ChevronRight, ClipboardList, Gauge, Library, Menu, Newspaper, RefreshCcw, Search, Settings, Sparkles, UserRound, X } from 'lucide-react'
+import { recordActivityEvent } from './api'
 
 export type AppPage = 'dashboard' | 'chat' | 'library' | 'current_affairs' | 'upsc_books' | 'visual' | 'revision' | 'quizzes' | 'tests' | 'progress' | 'profile' | 'settings'
 
@@ -30,7 +31,11 @@ export function AppShell({ page, onNavigate, onNewChat, sidebarContent, workspac
   const [search, setSearch] = useState('')
   const pageLabel = NAVIGATION.find(item => item.page === page)?.label ?? 'UPSC AI Mentor'
   const matches = useMemo(() => search.trim() ? NAVIGATION.filter(item => item.label.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 5) : [], [search])
-  function navigate(next: AppPage) { onNavigate(next); setDrawerOpen(false); setSearch('') }
+  function navigate(next: AppPage) {
+    const query = search.trim()
+    if (query) void recordActivityEvent({ event_type: 'internal_search', subject: 'Platform navigation', topic: query, duration_seconds: 0, metadata: { page: 'global', destination: next } }).catch(() => undefined)
+    onNavigate(next); setDrawerOpen(false); setSearch('')
+  }
   return <main className="app-shell premium-shell">
     <button className="mobile-menu" aria-label="Open navigation" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><Menu size={19} /></button>
     {drawerOpen && <button className="drawer-backdrop" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} />}

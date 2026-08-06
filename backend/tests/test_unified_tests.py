@@ -2,6 +2,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from src.main import app
+from src.api.routes.tests import get_service
 from src.tests_engine.service import PrelimsQuizCreate, UnifiedTestsService
 
 client = TestClient(app)
@@ -21,6 +22,16 @@ class _GeneralQuizLLM:
 class _InvalidGeneralQuizLLM:
     async def generate_structured(self, **_kwargs):
         return "not JSON"
+
+
+class _UnavailableQuizService:
+    def generate_prelims_quiz(self, _payload):
+        raise ConnectionError("local model refused the connection")
+
+
+class _UnavailableQuizLLM:
+    async def generate_structured(self, **_kwargs):
+        raise ConnectionError("local model refused the connection")
 
 
 class _EventRecorder:
@@ -87,6 +98,28 @@ def test_prelims_general_subject_rejects_unstructured_model_output():
     service = _general_service(_InvalidGeneralQuizLLM())
     with pytest.raises(ValueError, match="valid quiz structure"):
         service.generate_prelims_quiz(PrelimsQuizCreate(source_type="general", question_count=5))
+
+
+def test_prelims_endpoint_returns_actionable_error_when_model_is_unavailable():
+    app.dependency_overrides[get_service] = lambda: _UnavailableQuizService()
+    try:
+        response = client.post("/tests/prelims/generate", json={"source_type": "general", "question_count": 5})
+    finally:
+        app.dependency_overrides.pop(get_service, None)
+
+    assert response.status_code == 503
+    assert "Ollama" in response.json()["detail"]
+
+
+def test_fundamental_rights_uses_verified_fallback_when_model_is_unavailable():
+    service = _general_service(_UnavailableQuizLLM())
+    result = service.generate_prelims_quiz(PrelimsQuizCreate(
+        source_type="general", subject="Indian Polity and Governance",
+        topic="fundamental rights", question_count=10))
+
+    assert len(result["questions"]) == 10
+    assert all(question["source_title"] == "Verified UPSC question bank" for question in result["questions"])
+    assert len(service.activity.events) == 1
 
 
 def test_prelims_generate_books_succeeds():

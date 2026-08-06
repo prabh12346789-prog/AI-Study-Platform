@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
@@ -9,6 +11,7 @@ from src.tests_engine.service import (
 )
 
 router = APIRouter(prefix="/tests", tags=["tests"])
+log = logging.getLogger(__name__)
 
 def get_service():
     return UnifiedTestsService()
@@ -23,6 +26,12 @@ def generate_prelims(payload: PrelimsQuizCreate, svc: UnifiedTestsService = Depe
         return svc.generate_prelims_quiz(payload)
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
+    except Exception as err:
+        log.exception("Prelims quiz generation failed")
+        raise HTTPException(
+            status_code=503,
+            detail="The local quiz model is unavailable or timed out. Confirm Ollama is running, then try again.",
+        ) from err
 
 class PrelimsSubmitPayload(BaseModel):
     questions: list[dict]

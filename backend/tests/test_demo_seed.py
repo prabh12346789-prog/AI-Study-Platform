@@ -11,3 +11,9 @@ def test_demo_seed_is_complete_and_idempotent(tmp_path):
     assert first["quiz_mistakes"] >= 1
     assert first["mentor_recommendation"]
     assert first["trusted_video"]
+    assert first["long_term_history"]["conversations_added"] == 6
+    assert first["long_term_history"]["messages_added"] == 12
+    assert first["long_term_history"]["mastery_topics_added"] == 12
+    assert first["long_term_history"]["visual_roadmaps_added"] == 6
+    assert second["long_term_history"]["conversations_added"] == 0
+    assert second["long_term_history"]["visual_roadmaps_added"] == 0

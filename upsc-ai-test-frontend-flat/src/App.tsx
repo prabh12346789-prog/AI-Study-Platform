@@ -28,6 +28,7 @@ import {
   getProfile,
   LearnerProfile,
   PdfDocument,
+  recordActivityEvent,
 } from './api'
 
 type Role = 'user' | 'assistant'
@@ -211,6 +212,7 @@ export default function App() {
     event?.preventDefault()
     const trimmed = (questionOverride ?? question).trim()
     if (!trimmed || isGenerating) return
+    void recordActivityEvent({ event_type: 'internal_search', subject: 'AI Study Coach', topic: trimmed, duration_seconds: 0, metadata: { page: 'chat', mode } }).catch(() => undefined)
     setVideoRequested(/\b(video|watch|youtube)\b/i.test(trimmed))
 
     const userMessage: Message = {

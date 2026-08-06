@@ -25,7 +25,7 @@ export interface ChatResponse {
 }
 
 export interface ActivityEventInput {
-  event_type: 'study_time_logged'
+  event_type: 'study_time_logged' | 'internal_search'
   conversation_id?: string
   subject?: string
   topic?: string
@@ -37,9 +37,12 @@ export interface ActivityBreakdown { name: string; study_seconds: number; event_
 export interface ActivityEvent { id: string; event_type: string; subject: string | null; topic: string | null; occurred_at: string; duration_seconds?: number | null; metadata?: Record<string, unknown> | null }
 export interface ActivitySummary {
   total_study_seconds: number; questions_asked: number; answers_generated: number; pdfs_uploaded: number
+  searches_made?: number; top_searches?: string[]
+  first_activity_at?: string | null; total_learning_days?: number
   subjects_studied: number; top_subject: string | null; top_topic: string | null
   subject_breakdown: ActivityBreakdown[]; topic_breakdown: ActivityBreakdown[]; recent_events: ActivityEvent[]
   daily_breakdown?: Array<{ date: string; study_seconds: number; event_count: number }>
+  monthly_breakdown?: Array<{ month: string; study_seconds: number; event_count: number; searches_made: number; questions_asked: number }>
   demo_mode?: boolean
 }
 
@@ -269,7 +272,7 @@ export async function recordActivityEvent(event: ActivityEventInput, keepalive =
   if (!response.ok) throw new Error(`Activity logging failed (${response.status}): ${await response.text()}`)
 }
 
-export async function getActivitySummary(period: 'today' | '7d' = 'today'): Promise<ActivitySummary> {
+export async function getActivitySummary(period: 'today' | '7d' | '30d' | '90d' | '1y' | 'all' = 'today'): Promise<ActivitySummary> {
   const response = await fetch(`${API_BASE_URL}/activity/summary?period=${period}`)
   if (!response.ok) throw new Error(`Activity summary failed (${response.status}): ${await response.text()}`)
   return response.json()

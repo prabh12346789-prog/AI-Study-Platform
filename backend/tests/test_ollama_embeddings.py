@@ -7,6 +7,7 @@ import requests
 
 from src.core.config import settings
 from src.rag.embeddings import EmbeddingProviderError, EmbeddingService
+from src.search.local_search import LocalSearch
 from src.rag.retriever import Retriever
 from src.rag.vector_store import VectorStore
 
@@ -66,6 +67,18 @@ def test_embedding_model_missing_is_readable(monkeypatch):
     monkeypatch.setattr("src.rag.embeddings.requests.post", lambda *args, **kwargs: Response(status_code=404))
     with pytest.raises(EmbeddingProviderError, match="ollama pull nomic-embed-text"):
         EmbeddingService.generate_embedding("test")
+
+
+def test_local_search_degrades_to_empty_context_when_embeddings_are_unavailable():
+    class UnavailableRetriever:
+        def retrieve(self, _question):
+            raise EmbeddingProviderError("embedding model unavailable")
+
+    result = LocalSearch(retriever=UnavailableRetriever(), lexical_search=lambda _question: []).search("Explain Article 32")
+    assert result["provider"] == "local_unavailable"
+    assert result["chunks"] == []
+    assert result["sources"] == []
+    assert "embedding model unavailable" in result["error"]
 
 
 @pytest.mark.parametrize("payload", [{}, {"embeddings": []}, {"embeddings": [["bad"]]}])

@@ -1,5 +1,13 @@
 # Project State
 
+## Study Coach containment and backend recovery — 2026-08-06
+
+- Fixed the three-panel Study Coach workspace so conversation messages, both side rails, and the composer occupy separate bounded grid rows. The composer is no longer a sticky overlay, the message list owns its scrolling area, and desktop/mobile drawers retain their responsive behavior.
+- Restored the installed Ollama service and verified `qwen2.5:3b` is reachable. Diagnosed the remaining HTTP 500 as a missing configured `nomic-embed-text` model during pre-generation retrieval; the model download completed server-side and health detection now treats Ollama's implicit `:latest` tag as equivalent to the configured untagged name.
+- When semantic retrieval is unavailable or returns no indexed matches, local search now performs a bounded keyword lookup over already-extracted, active UPSC study books. Results retain book titles and page references and must pass the same grounding threshold; no ungrounded answer is fabricated.
+- Normal Chat maps Ollama connection errors to actionable HTTP 503 responses, while streaming Chat emits an actionable SSE error event. Live Chat for the exact reported `what are fundamental rights` question returned HTTP 200 with five cited Polity-book passages; live streaming returned HTTP 200 with a completion event and no error event.
+- Targeted backend tests pass 14, the frontend production build passes, Python compilation and `git diff --check` pass.
+
 ## Realistic multi-year learner demo data — 2026-08-06
 
 - Added an idempotent, dependency-free SQLite seed utility for consented in-platform learner history from 2023-01-09 through the current date. It creates realistic focused study, mentor questions, internal searches, revisions, Prelims tests, book opens, and visual-roadmap activity across eight UPSC subject areas without replacing live rows.

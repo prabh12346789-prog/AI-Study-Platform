@@ -30,6 +30,14 @@ def test_missing_generation_model_is_reported(monkeypatch):
     assert status.embedding_model_available is True
 
 
+def test_implicit_latest_tag_matches_configured_model(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: Response({"models": [
+        {"name": f"{settings.OLLAMA_EMBEDDING_MODEL}:latest"},
+    ]}))
+    status = availability_status()
+    assert status.embedding_model_available is True
+
+
 def test_unavailable_timeout_and_invalid_response_are_distinct(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: (_ for _ in ()).throw(requests.ConnectionError()))
     assert availability_status().error_code == "ollama_unavailable"

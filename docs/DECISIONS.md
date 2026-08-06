@@ -204,3 +204,11 @@
 - Decision: `general` is an explicit Prelims test source. It uses the configured local generation model, validates an exact JSON question contract, rejects incomplete, contaminated, or malformed output, and labels questions as `General UPSC knowledge`.
 - Reason: Learners need subject practice even when no book is indexed. This keeps generation local and transparent without pretending the result has a document citation.
 - Compatibility: Existing `books` and `current_affairs` source types are unchanged. Book quizzes continue to use extracted real book blocks, and Current Affairs quizzes continue to use only accepted clean records.
+
+# Missing embeddings must not crash Chat
+
+- Date: 2026-08-06
+- Decision: Treat local embedding retrieval as an optional grounding input at request time. If the configured embedding provider or model is unavailable, return an empty local-search result to the shared grounding layer rather than raising an unhandled exception.
+- Safety boundary: The existing grounding policy remains authoritative. It may use approved trusted-web fallback or return a transparent insufficient-context response; it never converts missing embeddings into permission for an ungrounded answer.
+- Failure contract: Generation-model connectivity failures remain explicit—HTTP 503 for normal Chat and an actionable SSE error event for streaming Chat.
+- Extracted-book fallback: When semantic search cannot run or finds no indexed match, use a bounded SQLite JSON keyword search over active, ready study-book blocks. Keyword results keep page provenance and must clear the normal grounding threshold before entering the prompt.

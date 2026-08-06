@@ -21,7 +21,8 @@ class OllamaStatus:
 
 
 def _normalized_model(value: str) -> str:
-    return value.strip().strip('"\'').casefold()
+    normalized = value.strip().strip('"\'').casefold()
+    return normalized.removesuffix(":latest")
 
 
 def availability_status() -> OllamaStatus:

@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: ai-study-backend
+    env: python
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && python -m uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: DATABASE_URL
+        value: sqlite:///./data/app.sqlite3
+      - key: OLLAMA_BASE_URL
+        value: http://localhost:11434
+      - key: OLLAMA_MODEL
+        value: qwen2.5:3b
+      - key: EMBEDDING_PROVIDER
+        value: ollama
+      - key: OLLAMA_EMBEDDING_MODEL
+        value: nomic-embed-text
+
+  - type: web
+    name: ai-study-frontend
+    env: node
+    plan: free
+    buildCommand: cd upsc-ai-test-frontend-flat && npm install && npm run build
+    startCommand: npm install -g serve && serve -s upsc-ai-test-frontend-flat/dist -l 3000
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: ai-study-backend
+          property: url
